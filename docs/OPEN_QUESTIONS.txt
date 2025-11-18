@@ -1,0 +1,7 @@
+1. In schema file, should the fixed width file layout include reference number and other fields not incldued?
+2. Payor codes in CODESETS? Need to locate state codes. Unless it doesn't matter? Placeholders there for now.
+3. Is final output supposed to be uppercase? Lowercase? Doc doesn't specify.
+4. yaml files with config work but may not be sustainable in the long term.
+5. Spec describes warnings that the operator must acknowledge and errors that completely block submission.
+Why not just make it all errors that must be corrected? Ex. DOB before visit date. Technically format
+is correct so it should go through, but why allow an impossible situation to pass through?

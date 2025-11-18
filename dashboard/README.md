@@ -1,0 +1,168 @@
+# Compliance Report Dashboard
+
+Web-based UI for generating state compliance reports.
+
+## Quick Start
+
+### 1. Install Dependencies
+```bash
+pip install -r requirements-dashboard.txt
+```
+
+### 2. Run the Dashboard
+```bash
+python run_dashboard.py
+```
+
+### 3. Open in Browser
+Navigate to: http://localhost:8050
+
+## Features
+
+- **File Upload**: Drag-and-drop CSV/Excel files
+- **Tenant Selection**: Choose organization (ACME Health, Metro Clinic, etc.)
+- **State Selection**: Target state for report generation (NJ, NY)
+- **Real-time Processing**: Generate reports in 3-5 seconds for 10k records
+- **Validation Display**: View errors and warnings
+- **Download Center**: Get fixed-width files, validation reports, manifests
+- **Control Totals**: See financial breakdowns by payor and claim type
+
+## Architecture
+
+```
+dashboard/
+├── __init__.py         # Package init
+├── app.py              # Main Dash app initialization
+├── layouts.py          # UI components and page layouts
+├── callbacks.py        # Business logic and event handlers
+└── utils.py            # Helper functions
+```
+
+## Key Components
+
+### Layouts (`layouts.py`)
+- `create_main_layout()` - Main page structure
+- `create_upload_section()` - File upload UI
+- `create_config_section()` - Tenant/state selection
+- `create_results_section()` - Results display area
+- `create_success_results()` - Success state with stats
+- `create_error_results()` - Error state with validation issues
+
+### Callbacks (`callbacks.py`)
+- `handle_upload()` - Process file uploads
+- `generate_report()` - Call ReportAdapter and display results
+- `download_*()` - Handle file downloads
+
+### Utils (`utils.py`)
+- `get_tenant_runs()` - List historical runs
+- `format_file_size()` - Human-readable file sizes
+- `get_tenant_list()` - Load available tenants from config
+
+## Integration with Existing Code
+
+The dashboard wraps your existing `ReportAdapter`:
+
+```python
+from app.adapters.report_adapter import ReportAdapter
+
+adapter = ReportAdapter(config_dir="config", output_dir="output")
+
+artifact = adapter.generate(
+    tenant_id=tenant_id,
+    state_code=state_code,
+    source_file=source_file
+)
+```
+
+No changes to your core code required!
+
+## Adding Authentication
+
+### Option 1: Basic Auth (Quick)
+```python
+# In dashboard/app.py
+from dash_auth import BasicAuth
+
+VALID_USERNAME_PASSWORD_PAIRS = {
+    'admin': 'password123',
+    'acme_health': 'acme_pass'
+}
+
+BasicAuth(app, VALID_USERNAME_PASSWORD_PAIRS)
+```
+
+### Option 2: AWS Cognito (Production)
+```python
+# Add to callbacks.py
+from jose import jwt
+
+def verify_token(token):
+    # Verify JWT from Cognito
+    payload = jwt.decode(token, cognito_public_key)
+    return payload['cognito:username']
+
+# Add to each callback:
+@app.callback(...)
+def callback(n_clicks, token):
+    user = verify_token(token)
+    # Filter data by user's tenant...
+```
+
+## Deployment
+
+### Docker
+```dockerfile
+FROM python:3.10-slim
+WORKDIR /app
+COPY . .
+RUN pip install -r requirements-dashboard.txt
+CMD ["gunicorn", "-b", "0.0.0.0:8050", "dashboard.app:server"]
+```
+
+### AWS ECS
+```bash
+docker build -t compliance-dashboard .
+docker tag compliance-dashboard:latest <ecr-repo-url>
+docker push <ecr-repo-url>
+# Deploy to ECS Fargate
+```
+
+## Performance
+
+- **10k records**: ~3-5 seconds
+- **File upload**: Instant (client-side)
+- **Downloads**: Instant (served from disk)
+
+## TODO / Future Enhancements
+
+- [ ] Add run history table
+- [ ] Implement real-time progress bar for large files
+- [ ] Add batch processing queue
+- [ ] Export to CSV/Excel (in addition to fixed-width)
+- [ ] Add user authentication (Cognito)
+- [ ] Multi-tenant data isolation
+- [ ] Email notifications on completion
+- [ ] Scheduled report generation
+- [ ] API endpoints for programmatic access
+
+## Troubleshooting
+
+### Port already in use
+```bash
+# Change port in run_dashboard.py
+app.run_server(port=8051)
+```
+
+### Missing dependencies
+```bash
+pip install dash dash-bootstrap-components
+```
+
+### File upload fails
+- Check `temp_uploads/` directory exists and is writable
+- Verify file format is CSV or Excel
+
+### Report generation fails
+- Check `config/tenants/` has tenant YAML files
+- Verify `output/` directory is writable
+- Review logs in `dashboard.log`

@@ -1,0 +1,387 @@
+/* CSS Variables for Theme Colors */
+:root {
+    /* Light mode colors */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #e9ecef;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-muted: #adb5bd;
+    --border-color: #c0c0c0;
+    --card-bg: #ffffff;
+    --card-shadow: rgba(0, 0, 0, 0.1);
+    --upload-bg: #f8f9fa;
+    --upload-border: #c0c0c0;
+    --dropdown-selected: #dadada;
+    --dropdown-focused: #e8e8e8;
+
+    /* Brand colors (same in both modes) */
+    --color-primary: #0d6efd;
+    --color-success: #198754;
+    --color-warning: #ffc107;
+    --color-danger: #dc3545;
+    --color-info: #0dcaf0;
+}
+
+/* Dark mode colors */
+[data-theme="dark"] {
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #2d2d2d;
+    --bg-tertiary: #3a3a3a;
+    --text-primary: #e9ecef;
+    --text-secondary: #adb5bd;
+    --text-muted: #6c757d;
+    --border-color: #495057;
+    --card-bg: #2d2d2d;
+    --card-shadow: rgba(0, 0, 0, 0.3);
+    --upload-bg: #2d2d2d;
+    --upload-border: #495057;
+    --dropdown-selected: #3a3a3a;
+    --dropdown-focused: #4a4a4a;
+}
+
+/* Apply theme to body and all elements */
+* {
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease !important;
+}
+
+body {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Modern Navbar Styling */
+.modern-navbar {
+    background-color: var(--card-bg) !important;
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 1px 3px var(--card-shadow);
+    padding: 1rem 0;
+}
+
+.modern-navbar .container-fluid,
+.modern-navbar .container,
+.modern-navbar .col,
+.modern-navbar .row {
+    background-color: transparent !important;
+}
+
+.modern-navbar [class*="col-"] {
+    background-color: transparent !important;
+}
+
+/* Nav link styling */
+.nav-link-custom {
+    color: var(--text-primary) !important;
+    font-weight: 500;
+    padding: 0.5rem 1rem !important;
+}
+
+.nav-link-custom:hover {
+    color: var(--color-primary) !important;
+}
+
+.nav-link-custom.active {
+    color: var(--color-primary) !important;
+    font-weight: 600;
+}
+
+/* Header text styling */
+.header-title {
+    color: var(--text-primary) !important;
+    font-weight: 600;
+}
+
+.header-icon {
+    color: var(--text-secondary) !important;
+    font-size: 1.1rem;
+}
+
+.header-user-label {
+    color: var(--text-secondary) !important;
+}
+
+.header-user-name {
+    color: var(--text-primary) !important;
+    font-weight: 500;
+}
+
+/* Cards */
+.card {
+    background-color: var(--card-bg) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+    border-radius: 0 !important;
+}
+
+.card-header {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+    border-radius: 0 !important;
+}
+
+.card-body {
+    background-color: var(--card-bg) !important;
+    color: var(--text-primary) !important;
+    padding: 1.5rem !important;
+}
+
+/* Stat cards - ensure consistent sizing and spacing */
+.card .text-center {
+    padding: 1rem 0;
+}
+
+.card .text-center h2,
+.card .text-center h5 {
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Upload box */
+.upload-box {
+    background-color: var(--upload-bg) !important;
+    border-color: var(--upload-border) !important;
+    color: var(--text-primary) !important;
+    border-radius: 0 !important;
+}
+
+/* Alerts */
+.alert {
+    border-radius: 0 !important;
+}
+
+/* Buttons */
+.btn {
+    border-radius: 0 !important;
+}
+
+/* Dropdowns */
+div[class*="-control"] {
+    border-radius: 0 !important;
+}
+
+div[class*="-menu"] {
+    border-radius: 0 !important;
+}
+
+/* Text colors */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Loading component */
+._dash-loading-callback,
+._dash-loading {
+    background-color: transparent !important;
+}
+
+#loading {
+    background-color: transparent !important;
+}
+
+#loading > div {
+    background-color: transparent !important;
+}
+
+/* Results area - remove dark background */
+#results-area {
+    background-color: transparent !important;
+}
+
+#results-area > div {
+    background-color: transparent !important;
+}
+
+/* Dropdown styles */
+.Select-value-label {
+    font-weight: normal !important;
+    color: var(--text-primary) !important;
+}
+
+.Select-option.is-selected {
+    background-color: var(--dropdown-selected) !important;
+    color: var(--text-primary) !important;
+    font-weight: normal !important;
+}
+
+.Select-option.is-focused {
+    background-color: var(--dropdown-focused) !important;
+    color: var(--text-primary) !important;
+    font-weight: normal !important;
+}
+
+.VirtualizedSelectOption {
+    font-weight: normal !important;
+    color: var(--text-primary) !important;
+}
+
+.VirtualizedSelectFocusedOption {
+    background-color: var(--dropdown-focused) !important;
+    font-weight: normal !important;
+    color: var(--text-primary) !important;
+}
+
+.VirtualizedSelectSelectedOption {
+    background-color: var(--dropdown-selected) !important;
+    font-weight: normal !important;
+    color: var(--text-primary) !important;
+}
+
+div[class*="-option"]:active {
+    background-color: var(--dropdown-selected) !important;
+}
+
+div[class*="--is-selected"] {
+    background-color: var(--dropdown-selected) !important;
+    font-weight: normal !important;
+    color: var(--text-primary) !important;
+}
+
+div[class*="--is-focused"] {
+    background-color: var(--dropdown-focused) !important;
+    color: var(--text-primary) !important;
+}
+
+div[class*="-singleValue"] {
+    font-weight: normal !important;
+    color: var(--text-primary) !important;
+}
+
+div[class*="-control"] {
+    background-color: var(--card-bg) !important;
+    border-color: var(--border-color) !important;
+}
+
+div[class*="-menu"] {
+    background-color: var(--card-bg) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Table styles */
+.table {
+    color: var(--text-primary) !important;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: var(--bg-secondary) !important;
+}
+
+.table-bordered {
+    border-color: var(--border-color) !important;
+}
+
+.table-bordered td,
+.table-bordered th {
+    border-color: var(--border-color) !important;
+}
+
+/* Theme toggle switch */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.theme-toggle-switch {
+    position: relative;
+    width: 50px;
+    height: 24px;
+    background-color: var(--border-color);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.theme-toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+}
+
+[data-theme="dark"] .theme-toggle-switch::after {
+    transform: translateX(26px);
+}
+
+[data-theme="dark"] .theme-toggle-switch {
+    background-color: var(--color-primary);
+}
+
+/* Upload section styles */
+.upload-icon-primary {
+    color: var(--color-primary) !important;
+}
+
+.upload-icon-success {
+    color: var(--color-success) !important;
+}
+
+.upload-link {
+    color: var(--color-primary) !important;
+    text-decoration: underline;
+}
+
+.upload-link:hover {
+    opacity: 0.8;
+}
+
+/* Container background */
+.container-fluid {
+    background-color: var(--bg-primary) !important;
+}
+
+.uploaded-filename {
+    color: var(--text-primary) !important;
+}
+
+/* Fixed notification toast */
+.toast-notification {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 9999;
+    min-width: 300px;
+    max-width: 500px;
+    animation: slideIn 0.3s ease-out;
+}
+
+.toast-notification .alert {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Fade out animation for alerts */
+.alert.fade.show {
+    animation: slideIn 0.3s ease-out;
+}
+
+.alert.fade:not(.show) {
+    animation: fadeOut 0.5s ease-out;
+    opacity: 0;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+}

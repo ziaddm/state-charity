@@ -1,0 +1,22 @@
+# TODO - Compliance Analytics
+
+## NOW
+- [ ] Add unit tests for validators
+- [ ] Set up PostgreSQL + store run history
+- [ ] Build work queue UI (show runs, status, errors)
+- [ ] Add SFTP upload to state
+- [ ] Add basic login/auth
+- [ ] Deploy to AWS
+
+## NEXT (Scale to Multiple Tenants)
+- [ ] Add second state (NY or PA)
+- [ ] Financial/operational dashboards
+- [ ] Multi-tenant admin UI
+- [ ] HIPAA security hardening
+- [ ] Monitoring and alerts
+
+## LATER (Nice to Have)
+- [ ] AI error suggestions
+- [ ] Predictive analytics
+- [ ] More states
+- [ ] API for integrations

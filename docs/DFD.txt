@@ -1,0 +1,82 @@
+1. Tenant source file (CSV/Excel)
+   └─> extractor.py
+
+2. extractor.py
+   - Detects format (CSV/TSV/Excel)
+   - Normalizes headers (lowercase, underscores)
+   - Adds __rownum for traceability
+   - Returns: raw DataFrame + metadata
+   └─> mapper.py
+
+3. mapper.py
+   - Loads config/tenants/{tenant_id}.yaml
+   - Maps tenant columns → canonical fields
+   - Applies value_map transformations
+   - Adds constant fields
+   - Returns: canonical DataFrame + warnings
+   └─> validator.py
+
+4. validator.py
+   - Internally calls coercions.py first
+     └─> coercions.py: trim, uppercase, parse dates/times
+   - Validates coerced data:
+     • Required fields
+     • Length constraints
+     • Enum values
+     • Bounds checking
+     • (TODO: Cross-field rules)
+   - Collects errors with row numbers
+   - Returns: ValidationResult (passed: bool, errors: [], warnings: [])
+   └─> Decision point
+
+5a. IF VALIDATION FAILS:
+   - report_adapter sets artifact.status = "errors"
+   - NO submission file written
+   - Writes validation.json with all errors
+   - Returns ReportArtifact with error details
+   └─> END (operator must fix data and re-run)
+
+5b. IF VALIDATION PASSES:
+   - report_adapter sets artifact.status = "ready"
+   └─> writer.py
+
+6. writer.py (TODO - not yet implemented)
+   - Loads OUTPUT_LAYOUT from nj_schema.py
+   - Iterates through canonical DataFrame
+   - For each row:
+     • Apply emitters to format each field
+     • Build 212-byte fixed-width record
+   - Writes submission file (e.g., acme_health_NJ_20250131.txt)
+   - Returns: Path to written file
+   └─> report_adapter (continues)
+
+7. report_adapter (final steps)
+   - Stores submission_file_path in artifact
+   - Computes SHA256 checksum
+   - Calculates control totals:
+     • Row count
+     • Sum of total_charges
+     • Sum of total_payment_received
+     • Breakouts by payor_source, claim_type
+   - Builds manifest JSON (metadata)
+   - Calls artifact.to_bundle() to write:
+     • {run_id}_manifest.json
+     • {run_id}_validation.json
+     • {run_id}_control_totals.json
+     • submission file (already written by writer)
+   - Returns: Complete ReportArtifact
+   └─> main.py
+
+8. main.py
+   - Prints summary dashboard:
+     • Run ID
+     • Validation status
+     • Error/warning counts
+     • Output file path
+     • Checksum
+     • Generation time
+   - Exits with appropriate code:
+     • 0 = success
+     • 1 = failure
+     • 2 = validation errors
+

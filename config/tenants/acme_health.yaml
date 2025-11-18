@@ -1,0 +1,120 @@
+# config/tenants/acme_health.yaml
+tenant_id: "acme_health"
+tenant_name: "ACME Health Center"
+description: "Main FQHC with 3 satellite locations"
+
+# Map tenant's column names to canonical fields
+field_mappings:
+  # Simple string mappings
+  patient_id: "patient_mrn"
+  last_name: "pt_lastname"
+  first_name: "pt_firstname"
+  middle_initial: "pt_mi"
+  date_of_birth: "dob"
+  gender:
+    source: "sex"
+    value_map:
+      "Male": "M"
+      "Female": "F"
+      "Unknown": "U"
+      "M": "M"  # Allow already-coded values
+      "F": "F"
+      "U": "U"
+  ethnicity: "ethnicity_code"
+  race: "race_code"
+  street_address: "address_line1"
+  city: "patient_city"
+  state: "patient_state"
+  zip: "patient_zip"
+  census_tract: "census_tract_id"
+  
+  # Complex mappings with value transformations
+  visit_date:
+    source: "service_date"
+    format: "MM/DD/YYYY"
+  
+  visit_time:
+    source: "appt_time"
+  
+  invoice_number: "claim_number"
+  
+  new_patient:
+    source: "patient_status"
+    value_map:
+      "New": "Y"
+      "Established": "N"
+  
+  visit_type:
+    source: "visit_category"
+    value_map:
+      "Initial Visit": "initial"
+      "Follow-up Visit": "follow-up"
+      "Initial": "initial"
+      "Follow-up": "follow-up"
+  
+  # ICD codes
+  icd_1: "diagnosis_code_1"
+  icd_2: "diagnosis_code_2"
+  icd_3: "diagnosis_code_3"
+  icd_4: "diagnosis_code_4"
+  icd_5: "diagnosis_code_5"
+  
+  # Financial
+  family_size: "household_size"
+  family_income: "annual_income"
+  total_charges: "charge_amount"
+  total_payment_received: "payment_amt"
+  
+  # Payer info
+  payor_source:
+    source: "primary_insurance"
+    value_map:
+      "Medicaid": "MC"
+      "Medicare": "MD"
+      "Commercial Insurance": "PR"
+      "Private Pay": "PR"
+      "Self-Pay": "UN"
+      "Uninsured": "UN"
+      "Other": "OT"
+  
+  insurance_name: "insurance_carrier_name"
+  
+  # Flags
+  claim_type:
+    source: "service_type"
+    value_map:
+      "Inpatient": "I"
+      "Outpatient": "O"
+      "Emergency": "E"
+  
+  uncompensated_visit:
+    source: "charity_care_flag"
+    value_map:
+      "Yes": "Y"
+      "No": "N"
+      "1": "Y"
+      "0": "N"
+  
+  # Location
+  location_code:
+    source: "clinic_site"
+    value_map:
+      "Main Campus": "01"
+      "North Satellite": "02"
+      "South Clinic": "03"
+  
+  # Family care history
+  medicaid_family_care_ever: "medicaid_fc_history"
+  uninsured_family_care_ever: "uninsured_fc_history"
+  migrant_farmer: "is_migrant_farmer"
+  
+  # Record ID (unique encounter ID)
+  record_id: "encounter_id"
+
+# Constants for fields not in source data
+constants:
+  record_type: "01"
+
+# Optional: global transforms (applied after field mapping)
+transforms:
+  # Any additional transformations can go here
