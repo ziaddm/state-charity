@@ -51,79 +51,10 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
     setIsDragging(false);
   }, []);
 
-  const validateFile = (file: File): ValidationResult => {
-    const validExtensions = ['.csv', '.xlsx', '.xls'];
-    const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-
-    // Mock validation - replace with actual API call
-    if (!validExtensions.includes(fileExtension)) {
-      return {
-        id: Math.random().toString(36).substring(7),
-        fileName: file.name,
-        tenant: selectedTenant,
-        state: selectedState,
-        status: 'errors',
-        errorCount: 1,
-        warningCount: 0,
-        totalRecords: 0,
-        validRecords: 0,
-        errors: [{
-          code: 'E000',
-          field: 'file',
-          row: 0,
-          message: `Invalid file format. Accepted: ${validExtensions.join(', ')}`
-        }],
-        uploadedAt: new Date()
-      };
-    }
-
-    // Simulate validation results
-    const random = Math.random();
-    const totalRecords = Math.floor(Math.random() * 500 + 100);
-
-    if (random > 0.6) {
-      // Pass with no errors
-      const warningCount = Math.floor(Math.random() * 5);
-      return {
-        id: Math.random().toString(36).substring(7),
-        fileName: file.name,
-        tenant: selectedTenant,
-        state: selectedState,
-        status: warningCount > 0 ? 'warnings' : 'ready',
-        errorCount: 0,
-        warningCount,
-        totalRecords,
-        validRecords: totalRecords,
-        warnings: warningCount > 0 ? [
-          { code: 'W004', field: 'payor_source', row: 8, message: 'Invalid enum value' },
-          { code: 'W100', field: 'visit_date', row: 15, message: 'Cross-field violation' }
-        ] : undefined,
-        uploadedAt: new Date()
-      };
-    } else {
-      // Errors found
-      const errorCount = Math.floor(Math.random() * 10 + 1);
-      const warningCount = Math.floor(Math.random() * 3);
-      return {
-        id: Math.random().toString(36).substring(7),
-        fileName: file.name,
-        tenant: selectedTenant,
-        state: selectedState,
-        status: 'errors',
-        errorCount,
-        warningCount,
-        totalRecords,
-        validRecords: totalRecords - errorCount,
-        errors: [
-          { code: 'E001', field: 'patient_id', row: 5, message: 'Required field is empty' },
-          { code: 'E002', field: 'last_name', row: 12, message: 'Field exceeds maximum length' }
-        ],
-        warnings: warningCount > 0 ? [
-          { code: 'W004', field: 'payor_source', row: 8, message: 'Invalid enum value' }
-        ] : undefined,
-        uploadedAt: new Date()
-      };
-    }
+  const validateFile = async (file: File): Promise<ValidationResult> => {
+    // TODO: Call backend API to validate file
+    // POST /api/validate with FormData containing file, tenant, state
+    throw new Error('Not implemented - connect to backend API');
   };
 
   const processFiles = async (files: File[]) => {
@@ -134,12 +65,14 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
 
     setIsUploading(true);
 
-    // Simulate upload delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    const newResults = files.map(file => validateFile(file));
-    setResults(prev => [...newResults, ...prev]);
-    setIsUploading(false);
+    try {
+      const newResults = await Promise.all(files.map(validateFile));
+      setResults(prev => [...newResults, ...prev]);
+    } catch (error) {
+      alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDrop = useCallback((e: React.DragEvent) => {

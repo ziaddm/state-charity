@@ -14,15 +14,19 @@ export default function Login({ onLogin }: LoginProps) {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate login delay
-    setTimeout(() => {
+    try {
+      // TODO: Call backend API to authenticate
+      // POST /api/auth/login with { email, password }
+      throw new Error('Not implemented - connect to backend auth API');
+    } catch (error) {
+      alert(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
       setIsLoading(false);
-      onLogin();
-    }, 800);
+    }
   };
 
   return (
