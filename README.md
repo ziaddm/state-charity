@@ -1,168 +1,111 @@
-# Compliance Report Dashboard
+# Charity Care Compliance Portal
 
-Web-based UI for generating state compliance reports.
-
-## Quick Start
-
-### 1. Install Dependencies
-```bash
-pip install -r requirements-dashboard.txt
-```
-
-### 2. Run the Dashboard
-```bash
-python run_dashboard.py
-```
-
-### 3. Open in Browser
-Navigate to: http://localhost:8050
-
-## Features
-
-- **File Upload**: Drag-and-drop CSV/Excel files
-- **Tenant Selection**: Choose organization (ACME Health, Metro Clinic, etc.)
-- **State Selection**: Target state for report generation (NJ, NY)
-- **Real-time Processing**: Generate reports in 3-5 seconds for 10k records
-- **Validation Display**: View errors and warnings
-- **Download Center**: Get fixed-width files, validation reports, manifests
-- **Control Totals**: See financial breakdowns by payor and claim type
+Web application for healthcare compliance report generation and file validation. Includes user authentication, role-based access control, and multi-tenant support.
 
 ## Architecture
 
-```
-dashboard/
-├── __init__.py         # Package init
-├── app.py              # Main Dash app initialization
-├── layouts.py          # UI components and page layouts
-├── callbacks.py        # Business logic and event handlers
-└── utils.py            # Helper functions
-```
+- **Backend**: FastAPI (Python) with PostgreSQL on Supabase
+- **Frontend**: React + TypeScript + Vite + Tailwind CSS
+- **Authentication**: JWT tokens with bcrypt password hashing
+- **Database**: SQLAlchemy ORM with multi-tenant design
 
-## Key Components
+## Setup
 
-### Layouts (`layouts.py`)
-- `create_main_layout()` - Main page structure
-- `create_upload_section()` - File upload UI
-- `create_config_section()` - Tenant/state selection
-- `create_results_section()` - Results display area
-- `create_success_results()` - Success state with stats
-- `create_error_results()` - Error state with validation issues
+### Prerequisites
+- Python 3.13+
+- Node.js 18+
+- PostgreSQL connection string (Supabase)
 
-### Callbacks (`callbacks.py`)
-- `handle_upload()` - Process file uploads
-- `generate_report()` - Call ReportAdapter and display results
-- `download_*()` - Handle file downloads
+### 1. Backend Setup
 
-### Utils (`utils.py`)
-- `get_tenant_runs()` - List historical runs
-- `format_file_size()` - Human-readable file sizes
-- `get_tenant_list()` - Load available tenants from config
+```bash
+cd compliance-backend
 
-## Integration with Existing Code
+# Create .env file (copy .env template and add your credentials)
+cp .env.example .env
 
-The dashboard wraps your existing `ReportAdapter`:
+# Install dependencies
+pip install -r requirements.txt
 
-```python
-from app.adapters.report_adapter import ReportAdapter
-
-adapter = ReportAdapter(config_dir="config", output_dir="output")
-
-artifact = adapter.generate(
-    tenant_id=tenant_id,
-    state_code=state_code,
-    source_file=source_file
-)
+# Start server
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-No changes to your core code required!
+**Backend will be available at**: `http://localhost:8000`
 
-## Adding Authentication
+### 2. Frontend Setup
 
-### Option 1: Basic Auth (Quick)
-```python
-# In dashboard/app.py
-from dash_auth import BasicAuth
+```bash
+cd compliance-frontend
 
-VALID_USERNAME_PASSWORD_PAIRS = {
-    'admin': 'password123',
-    'acme_health': 'acme_pass'
-}
+# Install dependencies
+npm install
 
-BasicAuth(app, VALID_USERNAME_PASSWORD_PAIRS)
+# Start dev server
+npm run dev
 ```
 
-### Option 2: AWS Cognito (Production)
-```python
-# Add to callbacks.py
-from jose import jwt
+**Frontend will be available at**: `http://localhost:5173`
 
-def verify_token(token):
-    # Verify JWT from Cognito
-    payload = jwt.decode(token, cognito_public_key)
-    return payload['cognito:username']
+## User Flow
 
-# Add to each callback:
-@app.callback(...)
-def callback(n_clicks, token):
-    user = verify_token(token)
-    # Filter data by user's tenant...
+### Admin User
+1. Login with admin credentials: `admin@charity.local` / `admin123`
+2. See Admin Dashboard
+3. Create new users (sends temp password via email)
+4. Manage user accounts
+
+### Regular User
+1. Receive temp password from admin via email
+2. Login with email and temp password
+3. Forced to change password on first login
+4. Access Upload/Validation dashboard
+5. Upload compliance files for processing
+
+## Environment Variables
+
+Create a `.env` file in the root directory:
+
 ```
+# Database
+DATABASE_URL=postgresql://user:password@host:port/database
+
+# Security
+SECRET_KEY=your-secret-key-change-in-production
+
+# Email (optional for local testing)
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+```
+
+## API Endpoints
+
+### Authentication
+- `POST /api/auth/login` - Login with email/password
+- `POST /api/auth/create-user` - Create new user (admin only)
+- `POST /api/auth/change-password` - Change password (requires Bearer token)
+
+## Database Models
+
+- **User** - User accounts with roles (admin/user)
+- **Tenant** - Multi-tenant organization isolation
+- **ValidationRun** - File processing runs and history
+- **ValidationError** - Detailed validation error tracking
+- **AuditLog** - Audit trail of all actions
+
+## Development
+
+### Running Tests
+```bash
+pytest compliance-backend/tests
+```
+
+### Database Migrations
+SQLAlchemy models auto-create tables on startup via `init_db()`
 
 ## Deployment
 
-### Docker
-```dockerfile
-FROM python:3.10-slim
-WORKDIR /app
-COPY . .
-RUN pip install -r requirements-dashboard.txt
-CMD ["gunicorn", "-b", "0.0.0.0:8050", "dashboard.app:server"]
-```
+Environment variables are set via the hosting platform (AWS, Heroku, Docker, etc.). The `os.getenv()` pattern works everywhere - just set environment variables in your platform's dashboard instead of using .env files.
 
-### AWS ECS
-```bash
-docker build -t compliance-dashboard .
-docker tag compliance-dashboard:latest <ecr-repo-url>
-docker push <ecr-repo-url>
-# Deploy to ECS Fargate
-```
-
-## Performance
-
-- **10k records**: ~3-5 seconds
-- **File upload**: Instant (client-side)
-- **Downloads**: Instant (served from disk)
-
-## TODO / Future Enhancements
-
-- [ ] Add run history table
-- [ ] Implement real-time progress bar for large files
-- [ ] Add batch processing queue
-- [ ] Export to CSV/Excel (in addition to fixed-width)
-- [ ] Add user authentication (Cognito)
-- [ ] Multi-tenant data isolation
-- [ ] Email notifications on completion
-- [ ] Scheduled report generation
-- [ ] API endpoints for programmatic access
-
-## Troubleshooting
-
-### Port already in use
-```bash
-# Change port in run_dashboard.py
-app.run_server(port=8051)
-```
-
-### Missing dependencies
-```bash
-pip install dash dash-bootstrap-components
-```
-
-### File upload fails
-- Check `temp_uploads/` directory exists and is writable
-- Verify file format is CSV or Excel
-
-### Report generation fails
-- Check `config/tenants/` has tenant YAML files
-- Verify `output/` directory is writable
-- Review logs in `dashboard.log`

@@ -5,3 +5,10 @@ pandas
 pytest
 openpyxl
 pyyaml
+SQLAlchemy
+bcrypt
+python-jose
+passlib
+python-dotenv
+psycopg2-binary
+python-multipart

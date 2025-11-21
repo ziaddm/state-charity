@@ -159,11 +159,6 @@ export default function Upload() {
         <div className="flex items-start rounded-lg border border-blue-200 bg-blue-50 p-4">
           <AlertCircle className="mr-3 h-5 w-5 flex-shrink-0 text-blue-600" />
           <div className="text-sm text-blue-900">
-            <p className="font-medium">Validation Philosophy</p>
-            <p className="mt-1">
-              We use a "fail open" approach - errors block submission, but warnings allow
-              submission with acknowledgment. Trust your data and operators.
-            </p>
           </div>
         </div>
 

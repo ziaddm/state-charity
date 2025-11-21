@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Building2, Upload, FileText, CheckCircle2, XCircle, AlertCircle, LogOut } from 'lucide-react';
+import { Building2, Upload, FileText, CheckCircle2, XCircle, AlertCircle, LogOut, Trash2 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 
 interface UploadValidationProps {
@@ -19,6 +19,7 @@ interface ValidationResult {
   warningCount: number;
   totalRecords: number;
   validRecords: number;
+  processingTimeSeconds?: number;
   errors?: Array<{
     code: string;
     field: string;
@@ -31,15 +32,38 @@ interface ValidationResult {
     row: number;
     message: string;
   }>;
-  uploadedAt: Date;
+  uploadedAt: string;
 }
+
+const STORAGE_KEY = 'validation_results';
 
 export default function UploadValidation({ onLogout }: UploadValidationProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState('');
   const [selectedState, setSelectedState] = useState('NJ');
-  const [results, setResults] = useState<ValidationResult[]>([]);
+  const [results, setResults] = useState<ValidationResult[]>(() => {
+    // Load from localStorage on initial state initialization
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Failed to load validation results:', error);
+      return [];
+    }
+  });
+
+  const hasLoadedRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Save results to localStorage whenever they change (but skip initial load)
+  useEffect(() => {
+    if (hasLoadedRef.current) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
+    } else {
+      hasLoadedRef.current = true;
+    }
+  }, [results]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -52,9 +76,55 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
   }, []);
 
   const validateFile = async (file: File): Promise<ValidationResult> => {
-    // TODO: Call backend API to validate file
-    // POST /api/validate with FormData containing file, tenant, state
-    throw new Error('Not implemented - connect to backend API');
+    const token = localStorage.getItem('token');
+    const startTime = Date.now();
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('http://localhost:8000/api/validation/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Upload failed');
+    }
+
+    const data = await response.json();
+    const processingTime = (Date.now() - startTime) / 1000; // Convert to seconds
+
+    // Determine status based on error count
+    let status: 'ready' | 'errors' | 'warnings' = 'ready';
+    if (data.error_count > 0) {
+      status = 'errors';
+    } else if (data.warning_count > 0) {
+      status = 'warnings';
+    }
+
+    return {
+      id: data.run_id,
+      fileName: file.name,
+      tenant: selectedTenant,
+      state: selectedState,
+      status: status,
+      errorCount: data.error_count || 0,
+      warningCount: data.warning_count || 0,
+      totalRecords: data.total_records || 0,
+      validRecords: data.total_records - data.error_count || 0,
+      processingTimeSeconds: Math.round(processingTime * 100) / 100, // Round to 2 decimals
+      errors: data.errors || [],
+      warnings: data.warnings || [],
+      uploadedAt: new Date().toLocaleString(),
+    };
+  };
+
+  const deleteResult = (resultId: string) => {
+    setResults(prev => prev.filter(r => r.id !== resultId));
   };
 
   const processFiles = async (files: File[]) => {
@@ -89,6 +159,10 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
     const files = Array.from(e.target.files || []);
     if (files.length > 0) {
       processFiles(files);
+      // Reset the input so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -153,56 +227,6 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats */}
-        {results.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-600">Total Files</p>
-                    <p className="text-2xl font-bold text-slate-900 mt-1">{stats.total}</p>
-                  </div>
-                  <FileText className="w-8 h-8 text-slate-400" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-600">Passed</p>
-                    <p className="text-2xl font-bold text-green-600 mt-1">{stats.passed}</p>
-                  </div>
-                  <CheckCircle2 className="w-8 h-8 text-green-400" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-600">Warnings</p>
-                    <p className="text-2xl font-bold text-amber-600 mt-1">{stats.warnings}</p>
-                  </div>
-                  <AlertCircle className="w-8 h-8 text-amber-400" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-600">Errors</p>
-                    <p className="text-2xl font-bold text-red-600 mt-1">{stats.errors}</p>
-                  </div>
-                  <XCircle className="w-8 h-8 text-red-400" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
         {/* Upload Configuration */}
         <Card className="mb-8">
           <CardHeader>
@@ -223,9 +247,7 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
                   className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select facility...</option>
-                  <option value="hospital_a">Hospital A</option>
-                  <option value="hospital_b">Hospital B</option>
-                  <option value="clinic_c">Clinic C</option>
+                  <option value="acme_health">Acme Health</option>
                 </select>
               </div>
               <div>
@@ -288,6 +310,7 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
                     </Button>
                   </label>
                   <input
+                    ref={fileInputRef}
                     id="file-upload"
                     type="file"
                     multiple
@@ -298,15 +321,58 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
                 </>
               )}
             </div>
-
-            <Alert className="mt-4 border-blue-200 bg-blue-50">
-              <AlertCircle className="h-4 w-4 text-blue-600" />
-              <AlertDescription className="text-sm text-blue-800">
-                <strong>Fail Open Philosophy:</strong> Errors block submission, warnings allow submission with acknowledgment. We trust your data and operators.
-              </AlertDescription>
-            </Alert>
           </CardContent>
         </Card>
+
+        {/* Stats */}
+        {results.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-slate-600">Total Files</p>
+                    <p className="text-2xl font-bold text-slate-900 mt-1">{stats.total}</p>
+                  </div>
+                  <FileText className="w-8 h-8 text-slate-400" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-slate-600">Passed</p>
+                    <p className="text-2xl font-bold text-green-600 mt-1">{stats.passed}</p>
+                  </div>
+                  <CheckCircle2 className="w-8 h-8 text-green-400" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-slate-600">Warnings</p>
+                    <p className="text-2xl font-bold text-amber-600 mt-1">{stats.warnings}</p>
+                  </div>
+                  <AlertCircle className="w-8 h-8 text-amber-400" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-slate-600">Errors</p>
+                    <p className="text-2xl font-bold text-red-600 mt-1">{stats.errors}</p>
+                  </div>
+                  <XCircle className="w-8 h-8 text-red-400" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Results Section */}
         {results.length > 0 && (
@@ -330,21 +396,33 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
                         <div>
                           <p className="font-medium text-slate-900">{result.fileName}</p>
                           <p className="text-sm text-slate-600">
-                            {result.tenant} • {result.state} • {result.uploadedAt.toLocaleString()}
+                            {result.tenant} • {result.state} • {result.uploadedAt}
+                            {result.processingTimeSeconds && (
+                              <> • {result.processingTimeSeconds}s</>
+                            )}
                           </p>
                         </div>
-                        <Badge
-                          variant={result.status === 'ready' ? 'default' : 'secondary'}
-                          className={
-                            result.status === 'ready'
-                              ? 'bg-green-600'
-                              : result.status === 'warnings'
-                              ? 'bg-amber-600'
-                              : 'bg-red-600'
-                          }
-                        >
-                          {result.status.toUpperCase()}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={result.status === 'ready' ? 'default' : 'secondary'}
+                            className={
+                              result.status === 'ready'
+                                ? 'bg-green-600'
+                                : result.status === 'warnings'
+                                ? 'bg-amber-600'
+                                : 'bg-red-600'
+                            }
+                          >
+                            {result.status.toUpperCase()}
+                          </Badge>
+                          <button
+                            onClick={() => deleteResult(result.id)}
+                            className="text-slate-400 hover:text-red-600 transition-colors"
+                            title="Delete this result"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                       <div className="grid grid-cols-3 gap-4 mb-3">
                         <div>
@@ -357,11 +435,37 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
                         </div>
                         <div>
                           <p className="text-xs text-slate-600">Issues</p>
-                          <p className="text-sm font-semibold text-red-600">
-                            {result.errorCount} errors, {result.warningCount} warnings
-                          </p>
+                          {result.errorCount === 0 && result.warningCount === 0 ? (
+                            <p className="text-sm font-semibold text-slate-900">No issues</p>
+                          ) : (
+                            <p className="text-sm font-semibold text-red-600">
+                              {result.errorCount} errors, {result.warningCount} warnings
+                            </p>
+                          )}
                         </div>
                       </div>
+
+                      <div className="flex gap-2 mb-3">
+                        {result.status === 'ready' && (
+                          <>
+                            <a
+                              href={`http://localhost:8000/api/validation/download/${result.id}?token=${localStorage.getItem('token')}`}
+                              className="text-sm px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                              download
+                            >
+                              Download File
+                            </a>
+                            <a
+                              href={`http://localhost:8000/api/validation/download/${result.id}/report?token=${localStorage.getItem('token')}`}
+                              className="text-sm px-3 py-1 bg-slate-100 text-slate-700 rounded hover:bg-slate-200"
+                              download
+                            >
+                              Report
+                            </a>
+                          </>
+                        )}
+                      </div>
+
                       {result.errors && result.errors.length > 0 && (
                         <div className="mb-2">
                           <p className="text-sm font-semibold text-red-800 mb-1">Errors:</p>

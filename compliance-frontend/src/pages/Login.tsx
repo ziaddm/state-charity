@@ -19,9 +19,34 @@ export default function Login({ onLogin }: LoginProps) {
     setIsLoading(true);
 
     try {
-      // TODO: Call backend API to authenticate
-      // POST /api/auth/login with { email, password }
-      throw new Error('Not implemented - connect to backend auth API');
+      const response = await fetch('http://localhost:8000/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Login failed');
+      }
+
+      const data = await response.json();
+
+      // Store token in localStorage
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('userId', data.user_id);
+      localStorage.setItem('email', data.email);
+      localStorage.setItem('role', data.role);
+      // Note: Backend doesn't return must_change_password yet,
+      // but we'll update it once endpoint is updated
+      if (data.must_change_password) {
+        localStorage.setItem('must_change_password', 'true');
+      }
+
+      // Call the onLogin callback to update app state
+      onLogin();
     } catch (error) {
       alert(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
@@ -44,10 +69,7 @@ export default function Login({ onLogin }: LoginProps) {
         {/* Login Card */}
         <Card className="border-slate-200 shadow-xl">
           <CardHeader>
-            <CardTitle>Sign In</CardTitle>
-            <CardDescription>
-              Enter your credentials to access the file submission portal
-            </CardDescription>
+            <CardTitle className="font-bold text-xl">Sign In</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
