@@ -203,13 +203,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   <li>User logs in and must change password on first login</li>
                 </ol>
               </div>
-
-              <div className="border-t border-slate-200 pt-4">
-                <h3 className="font-semibold text-slate-900 mb-2">Available Facilities</h3>
-                <p className="text-xs text-slate-600">
-                  Facilities are automatically loaded from the database. Select the appropriate facility for each new user.
-                </p>
-              </div>
             </CardContent>
           </Card>
         </div>
