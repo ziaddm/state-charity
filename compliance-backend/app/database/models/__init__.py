@@ -4,5 +4,6 @@ from .user import User
 from .run import ValidationRun
 from .error import ValidationError
 from .audit import AuditLog
+from .patient_visit import PatientVisit
 
-__all__ = ["Base", "Tenant", "User", "ValidationRun", "ValidationError", "AuditLog"]
+__all__ = ["Base", "Tenant", "User", "ValidationRun", "ValidationError", "AuditLog", "PatientVisit"]
