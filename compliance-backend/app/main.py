@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 import sys
+import os
 from pathlib import Path
 import argparse
 
@@ -32,7 +33,7 @@ from app.adapters.report_adapter import ReportAdapter
 # ============================================================================
 # FASTAPI APP SETUP
 # ============================================================================
-from app.api import auth, validation
+from app.api import auth, validation, analytics, admin
 # Create FastAPI app
 app = FastAPI(
     title="Charity Care Compliance Portal",
@@ -42,11 +43,24 @@ app = FastAPI(
 
 app.include_router(auth.router)
 app.include_router(validation.router)
+app.include_router(analytics.router)
+app.include_router(admin.router)
 
 # Add CORS middleware so frontend can call the API
+# Get allowed origins from environment variable or use defaults for development
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+allowed_origins = ["http://localhost:5173", "http://localhost:3000"]  # Development defaults
+
+# Add production frontend URL if configured
+if FRONTEND_URL:
+    allowed_origins.append(FRONTEND_URL)
+    # Also allow CloudFront HTTPS variant
+    if FRONTEND_URL.startswith("http://"):
+        allowed_origins.append(FRONTEND_URL.replace("http://", "https://"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],  # Vite dev server
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

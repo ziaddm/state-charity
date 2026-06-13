@@ -1,0 +1,81 @@
+# Sample Tenant Configuration for Testing
+# This file demonstrates the required structure for creating a new clinic tenant
+
+field_mappings:
+  # Patient Demographics (REQUIRED)
+  patient_id: "Patient ID"
+  last_name: "Last Name"
+  first_name: "First Name"
+  middle_initial: "MI"
+  date_of_birth: "DOB"
+  gender: "Gender"
+  ethnicity: "Ethnicity"
+  race: "Race"
+
+  # Address Information
+  street_address: "Address"
+  city: "City"
+  state: "State"
+  zip: "ZIP"
+  census_tract: "Census Tract"
+
+  # Visit Information (REQUIRED)
+  visit_date: "Visit Date"
+  visit_time: "Visit Time"
+  visit_type: "Visit Type"
+  new_patient: "New Patient"
+  record_id: "Record ID"
+  invoice_number: "Invoice Number"
+
+  # Clinical Information
+  icd_1: "Diagnosis Code 1"
+  icd_2: "Diagnosis Code 2"
+  icd_3: "Diagnosis Code 3"
+  icd_4: "Diagnosis Code 4"
+  icd_5: "Diagnosis Code 5"
+
+  # Financial Information
+  family_size: "Family Size"
+  family_income: "Family Income"
+  total_charges: "Total Charges"
+  total_payment_received: "Total Payment"
+
+  # Insurance/Payer (REQUIRED)
+  payor_source: "Primary Insurance"
+  insurance_name: "Insurance Name"
+
+  # Other Fields
+  claim_type: "Claim Type"
+  uncompensated_visit: "Uncompensated"
+  location_code: "Location"
+  record_type: "Record Type"
+  medicaid_family_care_ever: "Medicaid History"
+  uninsured_family_care_ever: "Uninsured History"
+  migrant_farmer: "Migrant Worker"
+
+# Payer Source Mapping (REQUIRED)
+# Maps source data values to canonical codes
+payer_source_mapping:
+  "Medicaid": "MC"
+  "Medicare": "MD"
+  "Private Insurance": "PR"
+  "Private": "PR"
+  "Commercial": "PR"
+  "Self-Pay": "UN"
+  "Uninsured": "UN"
+  "Other": "OT"
+  "Unknown": "OT"
+
+# Visit Type Mapping (optional but recommended)
+visit_type_mapping:
+  "Initial": "initial"
+  "Follow-up": "follow-up"
+  "Follow Up": "follow-up"
+  "Followup": "follow-up"
+
+# Gender Mapping (optional)
+gender_mapping:
+  "Male": "M"
+  "Female": "F"
+  "Unknown": "U"
+  "Other": "U"

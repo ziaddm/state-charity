@@ -1,0 +1,75 @@
+# Docker Compose for local development
+# Run with: docker-compose up --build
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database (optional - comment out if using Supabase)
+  db:
+    image: postgres:15-alpine
+    container_name: compliance-db
+    environment:
+      POSTGRES_DB: compliance
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - compliance-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./compliance-backend
+      dockerfile: Dockerfile
+    container_name: compliance-backend
+    environment:
+      # Use local DB or override with Supabase URL
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/compliance}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      SMTP_SERVER: ${SMTP_SERVER:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Mount code for hot-reload during development
+      - ./compliance-backend:/app
+    restart: unless-stopped
+    networks:
+      - compliance-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./compliance-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    container_name: compliance-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - compliance-network
+
+volumes:
+  postgres_data:
+
+networks:
+  compliance-network:
+    driver: bridge

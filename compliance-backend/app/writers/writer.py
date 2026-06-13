@@ -54,12 +54,12 @@ def emit_right_justify_zero_pad(value: Any, width: int) -> str:
     if pd.isna(value) or value is None or value == "":
         return "0" * width
 
-    # Handle numeric types
+    # Handle numeric types — convert via float first to handle "12500.00" strings
     if isinstance(value, (int, float)):
-        num_val = int(value)
+        num_val = int(round(float(value)))
     else:
         try:
-            num_val = int(str(value).strip())
+            num_val = int(round(float(str(value).strip())))
         except (ValueError, AttributeError):
             logger.warning(f"Non-numeric value '{value}' for numeric field, using 0")
             return "0" * width
@@ -252,9 +252,11 @@ def vectorized_emit_x2(series: pd.Series, width: int) -> pd.Series:
 
 
 def vectorized_emit_n(series: pd.Series, width: int) -> pd.Series:
-    """Vectorized right-justify zero-pad."""
-    result = series.fillna(0).astype(int).astype(str).str.zfill(width)
-    # Handle values that exceed width
+    """Vectorized right-justify zero-pad. Handles int and float strings (e.g. '12500.00')."""
+    # Use to_numeric so float strings like "12500.00" are handled before int conversion
+    numeric = pd.to_numeric(series, errors="coerce").fillna(0)
+    # Round to nearest int (truncates decimal cents rather than crashing)
+    result = numeric.apply(lambda x: int(round(x))).astype(str).str.zfill(width)
     mask = result.str.len() > width
     result[mask] = "9" * width
     return result

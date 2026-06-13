@@ -5,7 +5,9 @@
       "Bash(python -m pytest:*)",
       "Bash(pip install:*)",
       "Bash(python run_dashboard.py:*)",
-      "Bash(docker-compose up:*)"
+      "Bash(docker-compose up:*)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ziadm\\\\Desktop\\\\VS Code\\\\compliance-analytics\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)"
     ],
     "deny": [],
     "ask": []

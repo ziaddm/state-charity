@@ -10,12 +10,6 @@ Web application for healthcare compliance report generation and file validation.
 - **Database**: SQLAlchemy ORM with multi-tenant design
 
 ## Setup
-
-### Prerequisites
-- Python 3.13+
-- Node.js 18+
-- PostgreSQL connection string (Supabase)
-
 ### 1. Backend Setup
 
 ```bash
@@ -28,7 +22,7 @@ cp .env.example .env
 pip install -r requirements.txt
 
 # Start server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload
 ```
 
 **Backend will be available at**: `http://localhost:8000`

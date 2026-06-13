@@ -81,6 +81,14 @@ class ReportAdapter:
             logger.info(f"[{run_id}] Loading tenant mapping config")
             mapper = load_tenant_config(tenant_id, str(self.config_dir / "tenants"))
 
+            # Step 2.5: Apply quality filters (remove test/admin/empty rows)
+            df_raw = mapper.apply_quality_filters(df_raw)
+            logger.info(f"[{run_id}] After quality filters: {len(df_raw)} rows")
+
+            # Step 2.6: Aggregate service-item rows to encounter level (if configured)
+            df_raw = mapper.aggregate_dataframe(df_raw)
+            logger.info(f"[{run_id}] After aggregation: {len(df_raw)} rows")
+
             # Step 3: PRE-VALIDATION - Check raw data structure
             logger.info(f"[{run_id}] Pre-validating raw data structure")
             artifact.status = "validating"
@@ -123,6 +131,10 @@ class ReportAdapter:
             logger.info(f"[{run_id}] Mapping to canonical schema (pre-validation passed)")
             df_canonical, _ = mapper.map_dataframe(df_raw)  # Warnings already handled in pre-validation
 
+            # Step 4.5: Apply global transforms (zip cleaning, abs charges, etc.)
+            df_canonical = mapper.apply_global_transforms(df_canonical)
+            logger.info(f"[{run_id}] Global transforms applied")
+
             # Step 5: Apply coercions
             from app.validation.coercions import apply_coercions
             from app.schema.nj_schema import CANONICAL_VISITS_SCHEMA, CROSS_FIELD_RULES
@@ -141,9 +153,9 @@ class ReportAdapter:
                 state_code
             )
 
-            # Merge pre-validation warnings into field validation result
-            field_validation.warnings.extend(pre_validation.warnings)
-            field_validation.warning_count = len(field_validation.warnings)
+            # FAIL CLOSED: Convert ALL pre-validation warnings to errors
+            field_validation.errors.extend(pre_validation.warnings)
+            field_validation.error_count = len(field_validation.errors)
 
             # Step 6.5: CONTROL TOTALS VALIDATION - Validate cross-record rules
             logger.info(f"[{run_id}] Validating control totals and cross-record rules")
@@ -159,28 +171,50 @@ class ReportAdapter:
                 state_code
             )
 
-            # Merge control validation into field validation
+            # FAIL CLOSED: Merge control validation into field validation (convert ALL warnings to errors)
             field_validation.errors.extend(control_validation.errors)
-            field_validation.warnings.extend(control_validation.warnings)
+            field_validation.errors.extend(control_validation.warnings)
             field_validation.error_count = len(field_validation.errors)
-            field_validation.warning_count = len(field_validation.warnings)
             field_validation.passed = len(field_validation.errors) == 0
 
             artifact.validation = field_validation
 
-            # Step 7: Generate output file (even if validation failed - "fail open" philosophy)
-            logger.info(f"[{run_id}] Generating {state_code} submission file")
-
+            # FAIL CLOSED: Only generate files if validation passed with ZERO errors
             if not field_validation.passed:
                 artifact.status = "errors"
-                logger.warning(f"[{run_id}] Validation failed with {len(field_validation.errors)} errors, but continuing to process all records")
-            else:
-                artifact.status = "ready"
+                logger.error(f"[{run_id}] ✗ Validation FAILED with {len(field_validation.errors)} errors - BLOCKING file generation and ingestion")
+
+                # Build minimal manifest for failed validation (no submission file)
+                artifact.manifest = {
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "tenant_name": mapper.tenant_name,
+                    "state_code": state_code,
+                    "source_file": str(source_file),
+                    "status": "errors",
+                    "validation_stage": "field_validation",
+                    "validation_failed": True,
+                    "error_count": len(field_validation.errors),
+                    "generation_timestamp": artifact.created_at,
+                    "extract_metadata": extract_meta,
+                    "mapping_summary": mapper.get_mapping_summary(),
+                }
+
+                elapsed = time.time() - start_time
+                artifact.generation_time_seconds = elapsed
+                bundle_paths = artifact.to_bundle(run_dir)
+                logger.info(f"[{run_id}] Validation artifacts written (no submission file generated): {list(bundle_paths.keys())}")
+
+                return artifact
+
+            # Step 7: Generate output file (validation passed)
+            logger.info(f"[{run_id}] ✓ Validation PASSED - Generating {state_code} submission file")
+            artifact.status = "ready"
 
             output_filename = f"{tenant_id}_{state_code}_{datetime.now().strftime('%Y%m%d')}_{run_id[:8]}.txt"
             output_path = run_dir / output_filename
 
-            # Write fixed-width format for state submission (process all records regardless of validation status)
+            # Write fixed-width format for state submission
             write_metadata = write_fixed_width(df_coerced, output_path, state_code)
             logger.info(f"[{run_id}] Fixed-width write: {write_metadata['records_written']} records, {write_metadata['bytes_written']} bytes")
 
@@ -191,6 +225,10 @@ class ReportAdapter:
             logger.info(f"[{run_id}] Computing control totals")
             control_totals = self._compute_control_totals(df_coerced)
             artifact.control_totals = control_totals
+
+            # Step 8.5: Store canonical data for analytics ingestion
+            logger.info(f"[{run_id}] Converting {len(df_coerced)} records to canonical format for ingestion")
+            artifact.canonical_data = df_coerced.to_dict('records')
 
             # Step 9: Build manifest with complete record count
             artifact.manifest = {
@@ -203,9 +241,8 @@ class ReportAdapter:
                 "checksum_sha256": artifact.submission_file_checksum,
                 "record_count": len(df_canonical),
                 "records_written": write_metadata['records_written'],
-                "validation_status": "errors" if not field_validation.passed else "passed",
-                "error_count": len(field_validation.errors),
-                "warning_count": len(field_validation.warnings),
+                "validation_status": "passed",
+                "error_count": 0,
                 "generation_timestamp": artifact.created_at,
                 "schema_version": "1.0.1",
                 "extract_metadata": extract_meta,

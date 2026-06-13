@@ -1,0 +1,327 @@
+# config/tenants/jfk_hackensack.yaml
+tenant_id: "jfk_hackensack"
+tenant_name: "JFK Hackensack Meridian Health"
+description: "JFK Health System - Multiple locations including NHSC E-PORT ADM"
+
+# Map tenant's column names to canonical fields
+# Use the exact column names as they appear in the clinic's raw CSV file
+field_mappings:
+  # Patient identification
+  patient_id: "Per Nbr"
+  last_name:
+    source: "Pat Name"
+    transform: "split_last_name"  # Extracts last name from "Last, First" format
+  first_name:
+    source: "Pat Name"
+    transform: "split_first_name"  # Extracts first name from "Last, First" format
+
+  # Demographics
+  date_of_birth: "Birth Dt"
+
+  gender:
+    source: "Sex"
+    transform: "clean_gender"  # Removes brackets and duplicates like "Male [ Male ]"
+    value_map:
+      "Male": "M"
+      "Female": "F"
+      "Unknown": "U"
+      "Undifferentiated": "U"
+      "Choose not to disclose": "U"
+      "M": "M"
+      "F": "F"
+      "U": "U"
+      "*": "U"
+
+  # Race and Ethnicity (complex multi-value fields)
+  race:
+    source: "Race"
+    value_map:
+      # Standard racial categories
+      "White": "W"
+      "White only": "W"
+      "White or Caucasian": "W"
+      "Caucasian": "W"
+      "White, non-Hispanic": "W"
+      "Black or African American": "B"
+      "Black or African American only": "B"
+      "African American": "B"
+      "Black": "B"
+      "Asian": "A"
+      "Asian only": "A"
+      "American Indian or Alaska Native": "N"
+      "American Indian or Alaskan Native": "N"
+      "Native American": "N"
+      "American Indian": "N"
+      "Native Hawaiian or Other Pacific Islander": "O"
+      "Native Hawaiian or Pacific Islander": "O"
+      "Native Hawaiian": "O"
+      "Pacific Islander": "O"
+      "Two or More Races": "O"
+      "Two or more races": "O"
+      "Multiracial": "O"
+      "More than one race": "O"
+      "Other Race": "O"
+      "Other": "O"
+      "Unknown": "U"
+      "Unknown Race": "U"
+      "Declined to specify": "U"
+      "Unreported/Chose Not to Disclose Race": "U"
+      "Not Reported": "U"
+      "Not reported": "U"
+      # Fallback: any unrecognized value → Unknown
+      "*": "U"
+
+  ethnicity:
+    source: "Ethnicity"
+    value_map:
+      "Another Hispanic, Latino or Spanish Origin": "H"
+      "Hispanic,Not of Hispanic, Latino or Spanish Origin,Declined to specify,Chicano": "H"
+      "Unreported/Chose Not to Disclose Race": "U"
+      "Declined to specify": "U"
+      "Hispanic": "H"
+      "Another Hispanic, Latino or Spanish Origin,Latin American": "H"
+      "Not of Hispanic, Latino or Spanish Origin": "U"
+      "Hispanic,Not of Hispanic, Latino or Spanish Origin": "H"
+      "Latin American": "H"
+      "Hispanic,Latin American,Declined to specify": "H"
+      "Another Hispanic, Latino or Spanish Origin,Hispanic": "H"
+      "Cuban": "H"
+      "Hispanic,Declined to specify": "H"
+      "Not of Hispanic, Latino or Spanish Origin,Other": "U"
+      "Not of Hispanic, Latino or Spanish Origin,Declined to specify": "U"
+      "Hispanic,Latin American": "H"
+      "Puerto Rican": "H"
+      "Hispanic,Puerto Rican": "H"
+      "Another Hispanic, Latino or Spanish Origin,Not of Hispanic, Latino or Spanish Origin": "H"
+      "Not of Hispanic, Latino or Spanish Origin,Hispanic": "H"
+      "Other": "U"
+      "Another Hispanic, Latino or Spanish Origin,Cuban": "H"
+      "Hispanic,Other": "H"
+      "Hispanic,Latin American,Not of Hispanic, Latino or Spanish Origin": "H"
+      "Puerto Rican,Declined to specify": "H"
+      "Not of Hispanic, Latino or Spanish Origin,Unreported/Chose Not to Disclose Race": "U"
+      "Not of Hispanic, Latino or Spanish Origin,Puerto Rican": "H"
+      # Fallback: any unrecognized value → Unknown
+      "*": "U"
+
+  # Address fields
+  city: "City"
+  zip:
+    source: "Zip"
+    transform: "clean_zip"  # Extracts first 5 digits, removes " USA" suffix
+
+  # Visit information
+  visit_date: "Dt of Svc"
+
+  invoice_number: "Encounter"
+
+  # New patient flag derived from Event type
+  new_patient:
+    source: "Event"
+    value_map:
+      "Medical Well Visit New": "Y"
+      "Medical Well Visit Established": "N"
+      "*": ""
+
+  # Visit type derived from Event type
+  visit_type:
+    source: "Event"
+    value_map:
+      "Medical Well Visit New": "initial"
+      "Medical Well Visit Established": "follow-up"
+      "*": ""
+
+  # ICD-10 diagnosis codes - map from Diag columns
+  icd_1: "Diag 1"
+  icd_2: "Diag 2"
+  icd_3: "Diag 3"
+  icd_4: "Diag 4"
+  icd_5: "Diag 5"
+
+  # Financial fields
+  total_charges: "Chg Amt"
+  total_payment_received: "Pay Amt"
+
+  family_size: "Fm Sz"
+  family_income: "Fm Inc"
+
+  # Payer source - complex mapping from payer name to code
+  payor_source:
+    source: "Payer Name"
+    value_map:
+      # Medicaid plans
+      "W200-United Healthcare Community Plan NJ": "MC"
+      "W201-Wellpoint": "MC"
+      "W202-Horizon NJ Health": "MC"
+      "W203-Aetna Better Health": "MC"
+      "W204-WellCare of NJ": "MC"
+      "Medicaid NJ": "MC"
+      # Medicare plans
+      "United Health Care Medicare": "MD"
+      # Commercial/Private
+      "United Healthcare": "OT"
+      "Cigna": "OT"
+      "Aetna US Healthcare HMO": "OT"
+      "Aetna US Healthcare Non HMO": "OT"
+      "Blue Cross Blue Shield": "OT"
+      "Horizon": "OT"
+      "Metlife": "OT"
+      # Self-pay/Uninsured
+      "Self Pay": "PR"
+      # Any payer not explicitly listed → Other
+      "*": "OT"
+
+  insurance_name: "Payer Name"
+
+  # Location
+  location_code:
+    source: "location"
+    value_map:
+      "JFK Hackensack Meridian Health": "01"
+      "NHSC E-PORT ADM": "02"
+      "MISC-RCM USE ONLY": "99"
+      "*": "99"
+
+  # Flags
+  migrant_farmer:
+    source: "Migrant Worker"
+    value_map:
+      "Not A Farm Worker": "N"
+      "Migrant Worker": "Y"
+      "Farm Worker": "Y"
+      "*": "N"
+
+  # Record ID (unique encounter ID)
+  record_id: "Encounter"
+
+# Constants for fields not in source data
+constants:
+  record_type: "01"
+  state_code: "NJ"
+  census_tract: ""
+  # These are not available in JFK source - emit blank in fixed-width output
+  medicaid_family_care_ever: ""
+  uninsured_family_care_ever: ""
+  claim_type: "O"  # Outpatient
+
+# Encounter-level aggregation: source data is service-item level (multiple rows per encounter)
+# Group by Encounter before mapping so each encounter becomes one canonical record
+aggregation:
+  enabled: true
+  group_by: "Encounter"
+  rules:
+    # Sum financial amounts across all service items in the encounter
+    sum:
+      - "Chg Amt"
+      - "Pay Amt"
+    # Take first non-empty value for demographics and visit info
+    first:
+      - "Per Nbr"
+      - "Pat Name"
+      - "Birth Dt"
+      - "Sex"
+      - "Race"
+      - "Ethnicity"
+      - "City"
+      - "Zip"
+      - "Dt of Svc"
+      - "Payer Name"
+      - "Fm Sz"
+      - "Fm Inc"
+      - "Migrant Worker"
+      - "Event"
+      - "location"
+    # Collect all non-null ICD codes across all rows and Diag columns,
+    # deduplicate, and fill into Diag 1-5 slots in order
+    collect_icd:
+      sources:
+        - "Diag 1"
+        - "Diag 2"
+        - "Diag 3"
+        - "Diag 4"
+        - "Diag 5"
+      targets:
+        - "Diag 1"
+        - "Diag 2"
+        - "Diag 3"
+        - "Diag 4"
+        - "Diag 5"
+
+# Global transforms applied to canonical fields after mapping
+# These run after field_mappings but before schema coercions
+transforms:
+  # Strip whitespace from all string fields
+  - field: "*"
+    type: "strip"
+
+  # Clean gender field - remove bracketed duplicates like "Male [ Male ]"
+  - field: "gender"
+    type: "regex_replace"
+    pattern: "\\s*\\[.*?\\]"
+    replacement: ""
+
+  # Clean zip codes - strip " USA" suffix then extract first 5 digits
+  - field: "zip"
+    type: "regex_replace"
+    pattern: "\\s+USA$"
+    replacement: ""
+
+  - field: "zip"
+    type: "regex_extract"
+    pattern: "^(\\d{5})"
+    default: ""
+
+  # Truncate fields to schema max lengths
+  - field: "patient_id"
+    type: "truncate"
+    max_length: 12
+
+  - field: "city"
+    type: "truncate"
+    max_length: 20
+
+  - field: "insurance_name"
+    type: "truncate"
+    max_length: 35
+
+  # Convert empty strings to None for numeric fields so they emit blank/zero
+  - field: "family_size"
+    type: "empty_to_null"
+
+  - field: "family_income"
+    type: "empty_to_null"
+
+  - field: "total_charges"
+    type: "empty_to_null"
+
+  - field: "total_payment_received"
+    type: "empty_to_null"
+
+  # Take absolute value of negative charges/payments (reversals/adjustments)
+  - field: "total_charges"
+    type: "abs_if_negative"
+
+  - field: "total_payment_received"
+    type: "abs_if_negative"
+
+# Data quality rules - filter rows before aggregation
+quality_checks:
+  # Skip rows with missing critical fields (source column names)
+  skip_if_empty:
+    - "Per Nbr"
+    - "Encounter"
+    - "Dt of Svc"
+
+  # Skip administrative/test patient records
+  skip_if_contains:
+    - field: "Pat Name"
+      values:
+        - "Misc, Capitation"
+        - "Misc, Unidentified"
+        - "RCM Unidentified"
+        - "Test, Test"
+
+  # Skip rows with empty encounter header rows
+  skip_if_equals:
+    - field: "Encounter"
+      value: ""

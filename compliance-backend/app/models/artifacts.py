@@ -143,6 +143,7 @@ class ReportArtifact:
     manifest: Dict[str, Any] = field(default_factory=dict)  # Summary info about this run
     validation: Optional[ValidationResult] = None  # The data quality report (errors/warnings)
     control_totals: Optional[ControlTotals] = None  # The summary numbers
+    canonical_data: Optional[List[Dict[str, Any]]] = None  # The canonical data records for analytics
 
     # Tracking info for audit trail
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())  # When we started

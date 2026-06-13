@@ -5,8 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database.models import Base
 
-env_path = Path(__file__).parent.parent.parent.parent / ".env"
-load_dotenv(env_path)
+env_path = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(env_path, override=True)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 

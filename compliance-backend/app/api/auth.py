@@ -63,8 +63,16 @@ class CreateUserResponse(BaseModel):
     error: str = None
 
 @router.post("/create-user", response_model=CreateUserResponse)
-def create_user(request: CreateUserRequest, db: Session = Depends(get_db)):
-    """Create a new User with temp password"""
+def create_user(
+    request: CreateUserRequest,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new User with temp password - admin only"""
+    # Verify user is admin
+    current_user = db.query(User).filter(User.id == user_id).first()
+    if not current_user or current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
 
     # check if user already exists
     existing_user = db.query(User).filter(User.email == request.email).first()
@@ -127,4 +135,42 @@ def change_password(
     return ChangePasswordResponse(
         success=True,
         message="Password changed successfully"
+    )
+
+class UserStatsResponse(BaseModel):
+    total_users: int
+    active_admins: int
+    active_users: int
+
+@router.get("/user-stats", response_model=UserStatsResponse)
+def get_user_stats(
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get user statistics - admin only, scoped to their tenant"""
+    # Verify user is admin
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Count users for this tenant only
+    total_users = db.query(User).filter(
+        User.tenant_id == user.tenant_id,
+        User.is_active == True
+    ).count()
+    active_admins = db.query(User).filter(
+        User.tenant_id == user.tenant_id,
+        User.role == 'admin',
+        User.is_active == True
+    ).count()
+    active_users = db.query(User).filter(
+        User.tenant_id == user.tenant_id,
+        User.role == 'user',
+        User.is_active == True
+    ).count()
+
+    return UserStatsResponse(
+        total_users=total_users,
+        active_admins=active_admins,
+        active_users=active_users
     )

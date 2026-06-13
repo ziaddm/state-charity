@@ -1,22 +1,20 @@
-# TODO - Compliance Analytics
+# TODO
 
 ## NOW
+
+- [ ] Remove option to change clinic from user page
+- [ ] Add "logged in as {clinic_name}" on user page 
+- [ ] Decide whether or not we want to add clinic admins
+    that can monitor and add their own users. (too much access? what does epic do?)
 - [ ] Add unit tests for validators
-- [ ] Set up PostgreSQL + store run history
-- [ ] Build work queue UI (show runs, status, errors)
-- [ ] Add SFTP upload to state
-- [ ] Add basic login/auth
-- [ ] Deploy to AWS
+- [ ] Add golden file test
+- [ ] Add another facility for error/security testing
 
-## NEXT (Scale to Multiple Tenants)
-- [ ] Add second state (NY or PA)
-- [ ] Financial/operational dashboards
-- [ ] Multi-tenant admin UI
-- [ ] HIPAA security hardening
-- [ ] Monitoring and alerts
-
-## LATER (Nice to Have)
+## LATER
+- [ ] Add SFTP  upload to state (not all states support)
+- [ ] Switch to company emails (using personal to send account creation emails right now)
+- [ ] Switch to an actual secret key for encryption
+- [ ] Deploy to AWS (make sure to sign BAA agreement to keep it HIPAA compliant before launch)
 - [ ] AI error suggestions
 - [ ] Predictive analytics
 - [ ] More states
-- [ ] API for integrations

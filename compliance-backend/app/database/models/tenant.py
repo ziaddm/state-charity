@@ -9,4 +9,5 @@ class Tenant(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     state_code = Column(String(2))
+    config_id = Column(String, nullable=True)  # matches YAML filename, e.g. "jfk_hackensack"
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

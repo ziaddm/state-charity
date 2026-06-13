@@ -5,12 +5,14 @@ from datetime import datetime, timezone
 
 class ValidationRun(Base):
     __tablename__ = "runs"
-    
+
     id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False)
     created_by_user_id = Column(String, ForeignKey("users.id"))
     state_code = Column(String(2))
-    status = Column(String)
+    status = Column(String)  # "validating", "ready", "uploading", "completed", "errors"
+    ingestion_status = Column(String)  # "pending", "in_progress", "completed", "failed"
+    records_ingested = Column(Integer, default=0)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
     error_count = Column(Integer, default=0)

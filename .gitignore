@@ -38,6 +38,8 @@ temp_uploads/
 # Environment variables
 .env
 .env.local
+.env.production
+.env.*.local
 
 # OS
 .DS_Store
@@ -46,3 +48,13 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
+
+# Node/Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# AWS
+.aws-sam/
+samconfig.toml

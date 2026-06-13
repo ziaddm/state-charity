@@ -1,0 +1,11 @@
+Login status: 200
+
+Upload status: 200
+Success: True
+Status: errors
+Errors: 1
+Warnings: 0
+Total records: 0
+Records ingested: 0
+
+FAILED! No records were ingested!
