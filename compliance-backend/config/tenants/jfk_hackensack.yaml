@@ -210,8 +210,8 @@ aggregation:
   enabled: true
   group_by: "Encounter"
   rules:
-    # Sum financial amounts across all service items in the encounter
-    sum:
+    # Sum only positive values — negative rows are reversals/adjustments, not real charges/payments
+    sum_positive:
       - "Chg Amt"
       - "Pay Amt"
     # Take first non-empty value for demographics and visit info
@@ -297,12 +297,6 @@ transforms:
   - field: "total_payment_received"
     type: "empty_to_null"
 
-  # Take absolute value of negative charges/payments (reversals/adjustments)
-  - field: "total_charges"
-    type: "abs_if_negative"
-
-  - field: "total_payment_received"
-    type: "abs_if_negative"
 
 # Data quality rules - filter rows before aggregation
 quality_checks:

@@ -463,6 +463,7 @@ class TenantMapper:
 
         rules = agg_config.get("rules", {})
         sum_cols = {_norm(c) for c in rules.get("sum", [])}
+        sum_positive_cols = {_norm(c) for c in rules.get("sum_positive", [])}
         first_cols = {_norm(c) for c in rules.get("first", [])}
 
         icd_cfg = rules.get("collect_icd", {})
@@ -496,6 +497,9 @@ class TenantMapper:
                 if col in sum_cols:
                     numeric = pd.to_numeric(group[col], errors="coerce").fillna(0)
                     row[col] = str(numeric.sum())
+                elif col in sum_positive_cols:
+                    numeric = pd.to_numeric(group[col], errors="coerce").fillna(0)
+                    row[col] = str(numeric[numeric > 0].sum())
                 else:
                     # first (explicit) or default for anything else
                     row[col] = _first_non_empty(group[col])
