@@ -93,7 +93,6 @@ def ingest_records_from_artifact(
         return 0
 
     canonical_records = artifact.canonical_data
-    print(f"✓ Found {len(canonical_records)} canonical records to process")
     logger.info(f"Found {len(canonical_records)} canonical records to process")
 
     # PERFORMANCE OPTIMIZATION: Bulk duplicate check
@@ -168,8 +167,8 @@ def ingest_records_from_artifact(
                 'icd_3': (record.get('icd_3') or '')[:10] or None,
                 'icd_4': (record.get('icd_4') or '')[:10] or None,
                 'icd_5': (record.get('icd_5') or '')[:10] or None,
-                'family_size': int(record.get('family_size', 0)) if record.get('family_size') else None,
-                'family_income': float(record.get('family_income', 0)) if record.get('family_income') else None,
+                'family_size': int(float(record.get('family_size'))) if record.get('family_size') not in (None, '', 0) else None,
+                'family_income': float(record.get('family_income')) if record.get('family_income') not in (None, '', 0) else None,
                 'total_charges': float(record.get('total_charges', 0)) if record.get('total_charges') else None,
                 'total_payment_received': float(record.get('total_payment_received', 0)) if record.get('total_payment_received') else None,
                 'payor_source': (record.get('payor_source') or '')[:10] or None,

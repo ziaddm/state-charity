@@ -299,8 +299,13 @@ async def get_runs(
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all validation runs for current user"""
-    runs = db.query(ValidationRun).filter(ValidationRun.created_by_user_id == user_id).all()
+    """Get all validation runs for current user, newest first"""
+    runs = (
+        db.query(ValidationRun)
+        .filter(ValidationRun.created_by_user_id == user_id)
+        .order_by(ValidationRun.created_at.desc())
+        .all()
+    )
 
     return {
         "success": True,
@@ -311,7 +316,14 @@ async def get_runs(
                 "status": r.status,
                 "ingestion_status": r.ingestion_status,
                 "records_ingested": r.records_ingested or 0,
-                "created_at": r.created_at.isoformat() if r.created_at else None
+                "error_count": r.error_count or 0,
+                "warning_count": r.warning_count or 0,
+                "record_count": r.record_count or 0,
+                "valid_count": r.valid_count or 0,
+                "has_submission_file": bool(r.submission_file_path and Path(r.submission_file_path).exists()),
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in runs
         ]

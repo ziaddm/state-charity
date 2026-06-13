@@ -3,6 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -38,7 +40,7 @@ interface FPLData {
   value: number;
 }
 
-interface CharityTier {
+interface VisitTrend {
   label: string;
   value: number;
 }
@@ -79,11 +81,11 @@ const EMERALD_COLORS = [
 export default function AnalyticsExecutive() {
   const [summary, setSummary] = useState<ExecutiveSummary | null>(null);
   const [fplData, setFplData] = useState<FPLData[]>([]);
-  const [charityTiers, setCharityTiers] = useState<CharityTier[]>([]);
+  const [visitTrends, setVisitTrends] = useState<VisitTrend[]>([]);
   const [yoyData, setYoyData] = useState<YoYComparison | null>(null);
   const [diagnosisData, setDiagnosisData] = useState<DiagnosisData[]>([]);
   const [payorData, setPayorData] = useState<PayorData[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('ytd');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -96,14 +98,14 @@ export default function AnalyticsExecutive() {
       const token = localStorage.getItem('token');
 
       // Fetch all analytics in parallel
-      const [summaryRes, fpl, tiers, yoy, diagnoses, payors] = await Promise.all([
+      const [summaryRes, fpl, trends, yoy, diagnoses, payors] = await Promise.all([
         fetch(`http://localhost:8000/api/analytics/summary?time_period=${selectedPeriod}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
         fetch(`http://localhost:8000/api/analytics/fpl-distribution?time_period=${selectedPeriod}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(r => r.json()),
-        fetch(`http://localhost:8000/api/analytics/charity-tiers?time_period=${selectedPeriod}`, {
+        fetch(`http://localhost:8000/api/analytics/visit-trends?time_period=${selectedPeriod}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(r => r.json()),
         fetch('http://localhost:8000/api/analytics/yoy-comparison', {
@@ -123,7 +125,7 @@ export default function AnalyticsExecutive() {
       }
 
       if (fpl.success) setFplData(fpl.data);
-      if (tiers.success) setCharityTiers(tiers.data);
+      if (trends.success) setVisitTrends(trends.data);
       if (yoy.success) setYoyData(yoy);
       if (diagnoses.success) setDiagnosisData(diagnoses.data);
       if (payors.success) setPayorData(payors.data);
@@ -358,15 +360,15 @@ export default function AnalyticsExecutive() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Charity Care Discount Tiers</CardTitle>
-            <CardDescription>Distribution of financial assistance levels</CardDescription>
+            <CardTitle>Visit Trends</CardTitle>
+            <CardDescription>Monthly visit volume over time</CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={charityTiers} layout="vertical">
+              <LineChart data={visitTrends}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                <XAxis type="number" />
-                <YAxis dataKey="label" type="category" width={180} />
+                <XAxis dataKey="label" style={{ fontSize: '11px' }} angle={-35} textAnchor="end" height={60} />
+                <YAxis style={{ fontSize: '11px' }} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: '#ecfdf5',
@@ -374,12 +376,16 @@ export default function AnalyticsExecutive() {
                     borderRadius: '8px'
                   }}
                 />
-                <Bar dataKey="value" radius={[0, 8, 8, 0]}>
-                  {charityTiers.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={EMERALD_COLORS[index % EMERALD_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  name="Visits"
+                  stroke="#059669"
+                  strokeWidth={2}
+                  dot={{ fill: '#059669', r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>

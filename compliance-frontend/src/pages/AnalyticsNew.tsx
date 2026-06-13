@@ -64,33 +64,42 @@ const CHART_COLORS = [
   EMERALD_COLORS[800],
 ];
 
+const TIME_PERIODS = [
+  { label: 'Week', value: 'week' },
+  { label: 'Month', value: 'month' },
+  { label: 'Quarter', value: 'quarter' },
+  { label: 'YTD', value: 'ytd' },
+  { label: 'All', value: 'all' },
+];
+
 export default function AnalyticsNew() {
   const [fplData, setFplData] = useState<FPLData[]>([]);
   const [charityTiers, setCharityTiers] = useState<CharityTier[]>([]);
   const [yoyData, setYoyData] = useState<YoYComparison | null>(null);
   const [diagnosisData, setDiagnosisData] = useState<DiagnosisData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [timePeriod, setTimePeriod] = useState('all');
 
   useEffect(() => {
-    loadAllAnalytics();
-  }, []);
+    loadAllAnalytics(timePeriod);
+  }, [timePeriod]);
 
-  const loadAllAnalytics = async () => {
+  const loadAllAnalytics = async (period: string) => {
     setIsLoading(true);
     const token = localStorage.getItem('token');
 
     try {
       const [fpl, tiers, yoy, diagnoses] = await Promise.all([
-        fetch('http://localhost:8000/api/analytics/fpl-distribution?time_period=ytd', {
+        fetch(`http://localhost:8000/api/analytics/fpl-distribution?time_period=${period}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(r => r.json()),
-        fetch('http://localhost:8000/api/analytics/charity-tiers?time_period=ytd', {
+        fetch(`http://localhost:8000/api/analytics/charity-tiers?time_period=${period}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(r => r.json()),
         fetch('http://localhost:8000/api/analytics/yoy-comparison', {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(r => r.json()),
-        fetch('http://localhost:8000/api/analytics/top-diagnoses?time_period=ytd', {
+        fetch(`http://localhost:8000/api/analytics/top-diagnoses?time_period=${period}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(r => r.json()),
       ]);
@@ -132,9 +141,26 @@ export default function AnalyticsNew() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">Analytics Dashboard</h1>
-          <p className="text-slate-600">Comprehensive charity care compliance insights</p>
+        <div className="mb-8 flex items-end justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900 mb-2">Analytics Dashboard</h1>
+            <p className="text-slate-600">Comprehensive charity care compliance insights</p>
+          </div>
+          <div className="flex items-center gap-1 bg-white border border-emerald-200 rounded-xl p-1 shadow-sm">
+            {TIME_PERIODS.map(({ label, value }) => (
+              <button
+                key={value}
+                onClick={() => setTimePeriod(value)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  timePeriod === value
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-emerald-700 hover:bg-emerald-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* YoY Comparison Cards */}

@@ -105,8 +105,8 @@ def validate_control_totals(
         if total_charges > 0:
             uncompensated_ratio = (total_charges - total_payments) / total_charges
 
-            # Warn if >95% uncompensated (might indicate data issue)
-            if uncompensated_ratio > 0.95:
+            # Warn only if payment column is entirely null (missing data, not legitimate zero payments)
+            if df['total_payment_received'].isna().all():
                 warnings.append({
                     "code": "W200",
                     "severity": "warning",

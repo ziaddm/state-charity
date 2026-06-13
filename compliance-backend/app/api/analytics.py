@@ -459,7 +459,6 @@ async def get_charity_tiers(
                 PatientVisit.tenant_id == user.tenant_id,
                 PatientVisit.visit_date >= start_date,
                 PatientVisit.visit_date <= end_date,
-                PatientVisit.uncompensated_visit == "Y",
                 PatientVisit.total_charges.isnot(None),
                 PatientVisit.total_payment_received.isnot(None)
             )
@@ -671,6 +670,48 @@ async def get_payor_distribution(
 
     except Exception as e:
         logger.error(f"Error fetching payor distribution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/visit-trends")
+async def get_visit_trends(
+    time_period: str = "all",
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get monthly visit counts over time"""
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        start_date, end_date = calculate_date_range(time_period)
+
+        results = db.query(
+            extract('year', PatientVisit.visit_date).label('year'),
+            extract('month', PatientVisit.visit_date).label('month'),
+            func.count(PatientVisit.id).label('count')
+        ).filter(
+            and_(
+                PatientVisit.tenant_id == user.tenant_id,
+                PatientVisit.visit_date >= start_date,
+                PatientVisit.visit_date <= end_date,
+                PatientVisit.visit_date.isnot(None)
+            )
+        ).group_by('year', 'month').order_by('year', 'month').all()
+
+        month_abbr = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+        data = [
+            {"label": f"{month_abbr[int(month)]} {int(year)}", "value": count}
+            for year, month, count in results
+        ]
+
+        return {"success": True, "data": data}
+
+    except Exception as e:
+        logger.error(f"Error fetching visit trends: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
