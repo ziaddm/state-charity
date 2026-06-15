@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch, downloadFile } from '../lib/api';
 import { CheckCircle2, XCircle, AlertCircle, Download, FileText, RefreshCw, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 
@@ -23,27 +24,30 @@ type StatusFilter = 'all' | 'completed' | 'errors';
 export default function SubmissionHistory() {
   const [runs, setRuns] = useState<HistoryRun[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const fetchRuns = async () => {
     setIsLoading(true);
+    setFetchError(null);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:8000/api/validation/runs', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch('/api/validation/runs');
       if (res.ok) {
         const data = await res.json();
         setRuns(data.runs || []);
+      } else {
+        setFetchError(res.status === 401 ? 'Session expired — please sign out and sign back in.' : `Failed to load history (${res.status})`);
       }
     } catch (err) {
+      setFetchError('Network error — check your connection and try again.');
       console.error('Failed to fetch runs:', err);
     } finally {
       setIsLoading(false);
     }
   };
+
 
   useEffect(() => {
     fetchRuns();
@@ -67,7 +71,7 @@ export default function SubmissionHistory() {
   };
 
   const isPassedStatus = (status: string) =>
-    status === 'ready' || status === 'completed' || status === 'uploading';
+    status === 'ready' || status === 'completed' || status === 'uploading' || status === 'validating';
 
   const filtered = runs.filter(r => {
     const matchesSearch = !search || r.filename?.toLowerCase().includes(search.toLowerCase());
@@ -99,8 +103,6 @@ export default function SubmissionHistory() {
       </Badge>
     );
   };
-
-  const token = localStorage.getItem('token');
 
   return (
     <div className="space-y-6">
@@ -170,6 +172,14 @@ export default function SubmissionHistory() {
           ))}
         </div>
       </div>
+
+      {/* Error banner */}
+      {fetchError && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-rose-50 border border-rose-300 rounded-xl">
+          <XCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+          <p className="text-sm text-rose-800">{fetchError}</p>
+        </div>
+      )}
 
       {/* Table */}
       {isLoading ? (
@@ -287,22 +297,20 @@ export default function SubmissionHistory() {
                     {/* Actions */}
                     {isPassed && run.has_submission_file && (
                       <div className="flex gap-2">
-                        <a
-                          href={`http://localhost:8000/api/validation/download/${run.id}?token=${token}`}
-                          download
+                        <button
+                          onClick={() => downloadFile(`/api/validation/download/${run.id}`)}
                           className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
                         >
                           <Download className="w-3.5 h-3.5" />
                           Download File
-                        </a>
-                        <a
-                          href={`http://localhost:8000/api/validation/download/${run.id}/report?token=${token}`}
-                          download
+                        </button>
+                        <button
+                          onClick={() => downloadFile(`/api/validation/download/${run.id}/report`)}
                           className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-700 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
                         >
                           <FileText className="w-3.5 h-3.5" />
                           Report Bundle
-                        </a>
+                        </button>
                       </div>
                     )}
 

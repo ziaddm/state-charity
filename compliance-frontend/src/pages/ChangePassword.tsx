@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiFetch } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -6,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Lock } from 'lucide-react';
 
 interface ChangePasswordProps {
-  onPasswordChanged: () => void;
+  onPasswordChanged: () => Promise<void>;
 }
 
 export default function ChangePassword({ onPasswordChanged }: ChangePasswordProps) {
@@ -35,18 +36,9 @@ export default function ChangePassword({ onPasswordChanged }: ChangePasswordProp
     setIsLoading(true);
 
     try {
-      const token = localStorage.getItem('token');
-
-      const response = await fetch('http://localhost:8000/api/auth/change-password', {
+      const response = await apiFetch('/api/auth/change-password', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          old_password: oldPassword,
-          new_password: newPassword,
-        }),
+        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
       });
 
       if (!response.ok) {
@@ -54,8 +46,7 @@ export default function ChangePassword({ onPasswordChanged }: ChangePasswordProp
         throw new Error(errorData.detail || 'Failed to change password');
       }
 
-      // Password changed successfully
-      onPasswordChanged();
+      await onPasswordChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {

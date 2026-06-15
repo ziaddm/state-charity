@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { apiFetch } from '../lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import {
@@ -72,12 +73,7 @@ export default function Analytics() {
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        const token = localStorage.getItem('token');
-        const response = await fetch('http://localhost:8000/api/analytics/metrics', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const response = await apiFetch('/api/analytics/metrics');
 
         if (response.ok) {
           const data = await response.json();
@@ -95,12 +91,7 @@ export default function Analytics() {
   useEffect(() => {
     const fetchSummary = async () => {
       try {
-        const token = localStorage.getItem('token');
-        const response = await fetch('http://localhost:8000/api/analytics/summary', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const response = await apiFetch('/api/analytics/summary');
 
         if (response.ok) {
           const data = await response.json();
@@ -121,11 +112,9 @@ export default function Analytics() {
     const fetchAnalytics = async () => {
       setIsLoading(true);
       try {
-        const token = localStorage.getItem('token');
-        const response = await fetch('http://localhost:8000/api/analytics/query', {
+        const response = await apiFetch('/api/analytics/query', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -160,12 +149,8 @@ export default function Analytics() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/analytics/upload', {
+      const response = await apiFetch('/api/analytics/upload', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
         body: formData
       });
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import {
   BarChart,
@@ -95,28 +96,15 @@ export default function AnalyticsExecutive() {
   const fetchAnalytics = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('token');
 
       // Fetch all analytics in parallel
       const [summaryRes, fpl, trends, yoy, diagnoses, payors] = await Promise.all([
-        fetch(`http://localhost:8000/api/analytics/summary?time_period=${selectedPeriod}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }),
-        fetch(`http://localhost:8000/api/analytics/fpl-distribution?time_period=${selectedPeriod}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
-        fetch(`http://localhost:8000/api/analytics/visit-trends?time_period=${selectedPeriod}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
-        fetch('http://localhost:8000/api/analytics/yoy-comparison', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
-        fetch(`http://localhost:8000/api/analytics/top-diagnoses?time_period=${selectedPeriod}&limit=5`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
-        fetch(`http://localhost:8000/api/analytics/payor-distribution?time_period=${selectedPeriod}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
+        apiFetch(`/api/analytics/summary?time_period=${selectedPeriod}`),
+        apiFetch(`/api/analytics/fpl-distribution?time_period=${selectedPeriod}`).then(r => r.json()),
+        apiFetch(`/api/analytics/visit-trends?time_period=${selectedPeriod}`).then(r => r.json()),
+        apiFetch('/api/analytics/yoy-comparison').then(r => r.json()),
+        apiFetch(`/api/analytics/top-diagnoses?time_period=${selectedPeriod}&limit=5`).then(r => r.json()),
+        apiFetch(`/api/analytics/payor-distribution?time_period=${selectedPeriod}`).then(r => r.json()),
       ]);
 
       if (summaryRes.ok) {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -107,14 +108,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   const loadData = async () => {
     try {
-      const token = localStorage.getItem('token');
 
       // Load tenants from admin endpoint
-      const tenantsResponse = await fetch('http://localhost:8000/api/admin/tenants', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      const tenantsResponse = await apiFetch('/api/admin/tenants');
 
       if (tenantsResponse.ok) {
         const data = await tenantsResponse.json();
@@ -126,11 +122,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       }
 
       // Load all users
-      const usersResponse = await fetch('http://localhost:8000/api/admin/users', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      const usersResponse = await apiFetch('/api/admin/users');
 
       if (usersResponse.ok) {
         const data = await usersResponse.json();
@@ -138,11 +130,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       }
 
       // Load user stats
-      const statsResponse = await fetch('http://localhost:8000/api/auth/user-stats', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      const statsResponse = await apiFetch('/api/auth/user-stats');
 
       if (statsResponse.ok) {
         const stats = await statsResponse.json();
@@ -159,13 +147,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     setMessage('');
 
     try {
-      const token = localStorage.getItem('token');
 
-      const response = await fetch('http://localhost:8000/api/auth/create-user', {
+      const response = await apiFetch('/api/auth/create-user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ email, role, tenant_id: tenantId }),
       });
@@ -204,7 +190,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     setTenantMessage('');
 
     try {
-      const token = localStorage.getItem('token');
 
       if (!yamlFile) {
         throw new Error('Please select a YAML configuration file');
@@ -215,11 +200,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       formData.append('state_code', stateCode.toUpperCase());
       formData.append('config_file', yamlFile);
 
-      const response = await fetch('http://localhost:8000/api/admin/tenants', {
+      const response = await apiFetch('/api/admin/tenants', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
         body: formData,
       });
 
@@ -259,13 +241,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     }
 
     try {
-      const token = localStorage.getItem('token');
 
-      const response = await fetch(`http://localhost:8000/api/admin/tenants/${tenantId}`, {
+      const response = await apiFetch(`/api/admin/tenants/${tenantId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
       });
 
       if (!response.ok) {

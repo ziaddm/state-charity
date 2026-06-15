@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { apiFetch, downloadFile } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import {
@@ -104,10 +105,7 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
 
   const pollStatus = async (runId: string) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/validation/status/${runId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`/api/validation/status/${runId}`);
       if (response.ok) {
         const data = await response.json();
         setResults(prev => prev.map(result =>
@@ -122,6 +120,16 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
               }
             : result
         ));
+      } else {
+        // Stop polling on auth failure or server error to prevent infinite requests
+        if (response.status === 401 || response.status >= 500) {
+          setResults(prev => prev.map(r =>
+            r.id === runId
+              ? { ...r, status: r.status === 'uploading' ? 'ready' as const : r.status, ingestionStatus: 'failed' }
+              : r
+          ));
+        }
+        console.error(`Polling returned ${response.status} for run ${runId}`);
       }
     } catch (error) {
       console.error(`Failed to poll status for ${runId}:`, error);
@@ -152,20 +160,22 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
   }, [results]);
 
   const validateFile = async (file: File): Promise<ValidationResult> => {
-    const token = localStorage.getItem('token');
     const startTime = Date.now();
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch('http://localhost:8000/api/validation/upload', {
+    const response = await apiFetch('/api/validation/upload', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
       body: formData,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Upload failed');
+      let message = `Upload failed (${response.status})`;
+      try {
+        const error = await response.json();
+        message = error.error || error.detail || message;
+      } catch { /* non-JSON body (e.g. 502 gateway HTML) — keep the status-code message */ }
+      throw new Error(message);
     }
 
     const data = await response.json();
@@ -216,7 +226,7 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
 
     setResults(prev => [...placeholders, ...prev]);
 
-    files.forEach(async (file, index) => {
+    await Promise.all(files.map(async (file, index) => {
       try {
         const result = await validateFile(file);
         setResults(prev => prev.map(r => r.id === placeholders[index].id ? result : r));
@@ -228,7 +238,7 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
             : r
         ));
       }
-    });
+    }));
   };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -264,7 +274,9 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
     const a = document.createElement('a');
     a.href = url;
     a.download = `charitycare-session-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -599,22 +611,20 @@ export default function UploadValidation({ onLogout }: UploadValidationProps) {
                               {/* Action buttons for passed files */}
                               {isPassed && result.errorCount === 0 && (
                                 <div className="flex gap-2 mb-4">
-                                  <a
-                                    href={`http://localhost:8000/api/validation/download/${result.id}?token=${localStorage.getItem('token')}`}
-                                    download
+                                  <button
+                                    onClick={() => downloadFile(`/api/validation/download/${result.id}`)}
                                     className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
                                   >
                                     <Download className="w-3.5 h-3.5" />
                                     Download File
-                                  </a>
-                                  <a
-                                    href={`http://localhost:8000/api/validation/download/${result.id}/report?token=${localStorage.getItem('token')}`}
-                                    download
+                                  </button>
+                                  <button
+                                    onClick={() => downloadFile(`/api/validation/download/${result.id}/report`)}
                                     className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-700 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
                                   >
                                     <FileText className="w-3.5 h-3.5" />
                                     Report
-                                  </a>
+                                  </button>
                                 </div>
                               )}
 

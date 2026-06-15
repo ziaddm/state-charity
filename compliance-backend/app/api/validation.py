@@ -356,51 +356,13 @@ async def get_tenants(
         ]
     }
 
-def get_current_user_optional(request: HTTPException = None, token: str = None, db: Session = Depends(get_db)):
-    """Get current user from either Authorization header or token query param"""
-    auth_header = request.headers.get("Authorization") if request else None
-    token_to_use = None
-
-    if auth_header and auth_header.startswith("Bearer "):
-        token_to_use = auth_header[7:]
-    elif token:
-        token_to_use = token
-
-    if not token_to_use:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication")
-
-    from app.services.tokens import verify_token
-    user_id = verify_token(token_to_use)
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    return user_id
-
 @router.get("/download/{run_id}")
 async def download_result(
     run_id: str,
-    token: str = None,
-    request = None,
+    user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Download the submission file from a validation run"""
-    # Get user from token (either in header or query param)
-    from app.services.tokens import verify_token
-
-    auth_header = request.headers.get("Authorization") if hasattr(request, 'headers') else None
-    token_to_use = None
-
-    if auth_header and auth_header.startswith("Bearer "):
-        token_to_use = auth_header[7:]
-    elif token:
-        token_to_use = token
-
-    if not token_to_use:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
-
-    user_id = verify_token(token_to_use)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
     # Get the validation run
     run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
     if not run:
@@ -428,29 +390,10 @@ async def download_result(
 @router.get("/download/{run_id}/validation")
 async def download_validation_report(
     run_id: str,
-    token: str = None,
-    request = None,
+    user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Download the validation report (JSON) from a validation run"""
-    # Get user from token (either in header or query param)
-    from app.services.tokens import verify_token
-
-    auth_header = request.headers.get("Authorization") if hasattr(request, 'headers') else None
-    token_to_use = None
-
-    if auth_header and auth_header.startswith("Bearer "):
-        token_to_use = auth_header[7:]
-    elif token:
-        token_to_use = token
-
-    if not token_to_use:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
-
-    user_id = verify_token(token_to_use)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
     # Get the validation run
     run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
     if not run:
@@ -490,28 +433,10 @@ async def download_validation_report(
 @router.get("/download/{run_id}/control-totals")
 async def download_control_totals(
     run_id: str,
-    token: str = None,
-    request = None,
+    user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Download the control totals report (JSON) from a validation run"""
-    from app.services.tokens import verify_token
-
-    auth_header = request.headers.get("Authorization") if hasattr(request, 'headers') else None
-    token_to_use = None
-
-    if auth_header and auth_header.startswith("Bearer "):
-        token_to_use = auth_header[7:]
-    elif token:
-        token_to_use = token
-
-    if not token_to_use:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
-
-    user_id = verify_token(token_to_use)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
     run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Validation run not found")
@@ -539,28 +464,10 @@ async def download_control_totals(
 @router.get("/download/{run_id}/manifest")
 async def download_manifest(
     run_id: str,
-    token: str = None,
-    request = None,
+    user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Download the manifest report (JSON) from a validation run"""
-    from app.services.tokens import verify_token
-
-    auth_header = request.headers.get("Authorization") if hasattr(request, 'headers') else None
-    token_to_use = None
-
-    if auth_header and auth_header.startswith("Bearer "):
-        token_to_use = auth_header[7:]
-    elif token:
-        token_to_use = token
-
-    if not token_to_use:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
-
-    user_id = verify_token(token_to_use)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
     run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Validation run not found")
@@ -588,27 +495,10 @@ async def download_manifest(
 @router.get("/download/{run_id}/report")
 async def download_report_bundle(
     run_id: str,
-    token: str = None,
-    request = None,
+    user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Download all report artifacts (validation, control-totals, manifest) as a zip file"""
-    from app.services.tokens import verify_token
-
-    auth_header = request.headers.get("Authorization") if hasattr(request, 'headers') else None
-    token_to_use = None
-
-    if auth_header and auth_header.startswith("Bearer "):
-        token_to_use = auth_header[7:]
-    elif token:
-        token_to_use = token
-
-    if not token_to_use:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
-
-    user_id = verify_token(token_to_use)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
 
     # Get the validation run
     run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
@@ -666,28 +556,10 @@ async def download_report_bundle(
 @router.get("/artifacts/{run_id}")
 async def list_artifacts(
     run_id: str,
-    token: str = None,
-    request = None,
+    user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """List all available artifacts for a validation run"""
-    from app.services.tokens import verify_token
-
-    auth_header = request.headers.get("Authorization") if hasattr(request, 'headers') else None
-    token_to_use = None
-
-    if auth_header and auth_header.startswith("Bearer "):
-        token_to_use = auth_header[7:]
-    elif token:
-        token_to_use = token
-
-    if not token_to_use:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
-
-    user_id = verify_token(token_to_use)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
     run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Validation run not found")

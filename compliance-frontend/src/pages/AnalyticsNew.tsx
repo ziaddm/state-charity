@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import {
   BarChart,
@@ -86,22 +87,13 @@ export default function AnalyticsNew() {
 
   const loadAllAnalytics = async (period: string) => {
     setIsLoading(true);
-    const token = localStorage.getItem('token');
 
     try {
       const [fpl, tiers, yoy, diagnoses] = await Promise.all([
-        fetch(`http://localhost:8000/api/analytics/fpl-distribution?time_period=${period}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
-        fetch(`http://localhost:8000/api/analytics/charity-tiers?time_period=${period}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
-        fetch('http://localhost:8000/api/analytics/yoy-comparison', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
-        fetch(`http://localhost:8000/api/analytics/top-diagnoses?time_period=${period}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
+        apiFetch(`/api/analytics/fpl-distribution?time_period=${period}`).then(r => r.json()),
+        apiFetch(`/api/analytics/charity-tiers?time_period=${period}`).then(r => r.json()),
+        apiFetch('/api/analytics/yoy-comparison').then(r => r.json()),
+        apiFetch(`/api/analytics/top-diagnoses?time_period=${period}`).then(r => r.json()),
       ]);
 
       if (fpl.success) setFplData(fpl.data);

@@ -1,52 +1,48 @@
 import { useState } from 'react';
+import { AuthUser } from '../contexts/AuthContext';
+import { apiFetch } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card } from '../components/ui/card';
-import { HeartPulse, ArrowRight } from 'lucide-react';
+import { HeartPulse, ArrowRight, AlertCircle } from 'lucide-react';
 
 interface LoginProps {
-  onLogin: () => void;
+  onLogin: (user: AuthUser) => void;
 }
 
 export default function Login({ onLogin }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError('');
 
     try {
-      const response = await fetch('http://localhost:8000/api/auth/login', {
+      const response = await apiFetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ email, password }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Login failed');
+        const data = await response.json().catch(() => ({}));
+        setError(data.detail || 'Invalid email or password.');
+        return;
       }
 
       const data = await response.json();
-
-      // Store token in localStorage
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('userId', data.user_id);
-      localStorage.setItem('email', data.email);
-      localStorage.setItem('role', data.role);
-      if (data.must_change_password) {
-        localStorage.setItem('must_change_password', 'true');
-      }
-
-      // Call the onLogin callback to update app state
-      onLogin();
-    } catch (error) {
-      alert(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      onLogin({
+        user_id: data.user_id,
+        email: data.email,
+        role: data.role,
+        must_change_password: data.must_change_password,
+      });
+    } catch {
+      setError('Unable to reach the server. Check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -111,6 +107,12 @@ export default function Login({ onLogin }: LoginProps) {
 
           <Card className="border-0 shadow-lg">
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
+              {error && (
+                <div className="flex items-start gap-3 px-4 py-3 bg-rose-50 border border-rose-200 rounded-lg">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-rose-700">{error}</p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-slate-700">Email Address</Label>
                 <Input
