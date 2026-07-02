@@ -311,16 +311,17 @@ def vectorized_emit_boolYN(series: pd.Series, width: int) -> pd.Series:
 def vectorized_emit_zip5(series: pd.Series, width: int) -> pd.Series:
     """Vectorized ZIP first 5 digits."""
     # Extract first 5 digits
-    result = series.fillna("").astype(str).str.extract('(\d{5})', expand=False).fillna("").str.ljust(width)
+    result = series.fillna("").astype(str).str.extract(r'(\d{5})', expand=False).fillna("").str.ljust(width)
     return result
 
 
 def vectorized_emit_visit_type(series: pd.Series, width: int, code_map: Dict[str, str] = None) -> pd.Series:
-    """Vectorized visit type code mapping."""
+    """Vectorized visit type code mapping. Unknown values emit blanks, matching
+    the scalar emitter — raw values must never leak into the fixed-width file."""
     if code_map is None:
         code_map = {"initial": "IN", "follow-up": "FU"}
     s = series.fillna("").astype(str).str.lower().str.strip()
-    result = s.replace(code_map).fillna("").str.ljust(width)
+    result = s.map(code_map).fillna("").str.ljust(width)
     return result
 
 
@@ -412,12 +413,18 @@ class FixedWidthWriter:
         for col in formatted_columns[1:]:
             all_lines = all_lines.str.cat(col)
 
-        # Validate record length on first record only (for speed)
+        # FAIL CLOSED: every record must be exactly record_length characters.
+        # A malformed line means the state would reject (or worse, misparse)
+        # the file, so refuse to write it at all.
         if len(all_lines) > 0:
-            first_line_len = len(all_lines.iloc[0])
-            if first_line_len != self.record_length:
-                logger.error(
-                    f"Record length mismatch: Expected {self.record_length} chars, got {first_line_len}"
+            line_lengths = all_lines.str.len()
+            bad = line_lengths != self.record_length
+            if bad.any():
+                bad_count = int(bad.sum())
+                example_len = int(line_lengths[bad].iloc[0])
+                raise ValueError(
+                    f"Fixed-width record length mismatch: {bad_count} record(s) are not "
+                    f"{self.record_length} characters (e.g. {example_len}). File not written."
                 )
 
         # Write all lines at once
@@ -425,7 +432,7 @@ class FixedWidthWriter:
             f.write("\n".join(all_lines) + "\n")
 
         records_written = len(all_lines)
-        bytes_written = (self.record_length * records_written) + records_written  # data + newlines
+        bytes_written = output_path.stat().st_size
 
         logger.info(
             f"Fixed-width write complete: {records_written} records, {bytes_written} bytes"

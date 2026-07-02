@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import {
   HeartPulse, Upload, FileText, CheckCircle2, XCircle, AlertCircle,
   LogOut, Trash2, BarChart3, ChevronDown, ChevronRight, Download, FileDown, Clock

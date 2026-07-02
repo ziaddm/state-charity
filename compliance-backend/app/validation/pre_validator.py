@@ -32,6 +32,7 @@ def validate_raw_structure(
     """
     errors = []
     warnings = []
+    info = []
 
     # Get all tenant columns that we expect to map
     field_map = tenant_mapper.field_map
@@ -72,13 +73,15 @@ def validate_raw_structure(
                     "action": f"Add '{tenant_col}' column to input file"
                 })
 
-    # Warn about unmapped columns (extra columns in source)
+    # Note unmapped columns (extra columns in source). These are informational
+    # only — an extra column is ignored by the mapper and is not a data problem,
+    # so it must never block a submission.
     mapped_cols = set(field_map.keys())
     actual_cols = set(df_raw.columns) - {"__rownum"}
     unmapped_cols = actual_cols - mapped_cols
 
     for col in unmapped_cols:
-        warnings.append({
+        info.append({
             "code": "I003",
             "severity": "info",
             "type": "unmapped_tenant_column",
@@ -106,7 +109,9 @@ def validate_raw_structure(
         passed=passed,
         errors=errors,
         warnings=warnings,
+        info=info,
         row_count=len(df_raw),
         error_count=len(errors),
-        warning_count=len(warnings)
+        warning_count=len(warnings),
+        info_count=len(info)
     )

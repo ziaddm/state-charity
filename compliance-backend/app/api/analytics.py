@@ -1,20 +1,35 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, extract
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, date
-from pathlib import Path
-import tempfile
 import logging
 
 from app.database.connection import get_db
 from app.database.models import PatientVisit, User
 from app.services.tokens import get_current_user
-from app.services.direct_ingestion import ingest_csv_directly
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+
+MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+# Human-readable labels for payor source codes (canonical fixed order so
+# chart colors stay stable across time-period filters)
+PAYOR_LABELS = {
+    "MC": "Medicaid",
+    "MD": "Medicare",
+    "PR": "Self-Pay",
+    "UN": "Uninsured",
+    "OT": "Commercial",
+}
+PAYOR_SERIES_ORDER = ["Medicaid", "Medicare", "Self-Pay", "Uninsured", "Commercial", "Unknown"]
+
+
+def _payor_label(code) -> str:
+    return PAYOR_LABELS.get((code or "").strip(), "Unknown") if code else "Unknown"
 
 
 class MetricOption(BaseModel):
@@ -715,48 +730,140 @@ async def get_visit_trends(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/upload")
-async def upload_for_analytics(
-    file: UploadFile = File(...),
+@router.get("/financial-trends")
+async def get_financial_trends(
+    time_period: str = "all",
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Direct CSV upload for analytics - bypasses validation
-    Expects CSV with acme_health column format
-    """
+    """Monthly billed charges vs. payments received"""
     try:
-        # Get user to find tenant
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        logger.info(f"Direct analytics upload for user {user.email}, tenant {user.tenant_id}")
+        start_date, end_date = calculate_date_range(time_period)
 
-        # Save uploaded file to temp location
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_path = Path(temp_file.name)
+        results = db.query(
+            extract('year', PatientVisit.visit_date).label('year'),
+            extract('month', PatientVisit.visit_date).label('month'),
+            func.sum(PatientVisit.total_charges).label('charges'),
+            func.sum(PatientVisit.total_payment_received).label('payments'),
+        ).filter(
+            and_(
+                PatientVisit.tenant_id == user.tenant_id,
+                PatientVisit.visit_date >= start_date,
+                PatientVisit.visit_date <= end_date,
+                PatientVisit.visit_date.isnot(None)
+            )
+        ).group_by('year', 'month').order_by('year', 'month').all()
 
-        # Ingest directly
-        records_ingested = ingest_csv_directly(
-            db=db,
-            csv_path=temp_path,
-            tenant_id=user.tenant_id
-        )
+        data = [
+            {
+                "label": f"{MONTH_ABBR[int(month)]} {int(year)}",
+                "charges": float(charges or 0),
+                "payments": float(payments or 0),
+            }
+            for year, month, charges, payments in results
+        ]
 
-        # Clean up temp file
-        temp_path.unlink()
-
-        logger.info(f"Direct ingestion complete: {records_ingested} records")
-
-        return {
-            "success": True,
-            "records_ingested": records_ingested,
-            "message": f"Successfully ingested {records_ingested} records into analytics database"
-        }
+        return {"success": True, "data": data}
 
     except Exception as e:
-        logger.error(f"Error in direct analytics upload: {e}", exc_info=True)
+        logger.error(f"Error fetching financial trends: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/payor-mix-trends")
+async def get_payor_mix_trends(
+    time_period: str = "all",
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Monthly visit counts broken out by payor source (for a stacked chart)"""
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        start_date, end_date = calculate_date_range(time_period)
+
+        results = db.query(
+            extract('year', PatientVisit.visit_date).label('year'),
+            extract('month', PatientVisit.visit_date).label('month'),
+            PatientVisit.payor_source,
+            func.count(PatientVisit.id).label('count'),
+        ).filter(
+            and_(
+                PatientVisit.tenant_id == user.tenant_id,
+                PatientVisit.visit_date >= start_date,
+                PatientVisit.visit_date <= end_date,
+                PatientVisit.visit_date.isnot(None)
+            )
+        ).group_by('year', 'month', PatientVisit.payor_source).order_by('year', 'month').all()
+
+        # Pivot into one row per month with a column per payor label
+        months: dict = {}
+        present: set = set()
+        for year, month, payor, count in results:
+            key = (int(year), int(month))
+            row = months.setdefault(key, {"label": f"{MONTH_ABBR[key[1]]} {key[0]}"})
+            label = _payor_label(payor)
+            row[label] = row.get(label, 0) + count
+            present.add(label)
+
+        # Fixed canonical order so series colors never depend on rank or filter
+        series = [s for s in PAYOR_SERIES_ORDER if s in present]
+        data = [months[k] for k in sorted(months.keys())]
+        for row in data:
+            for s in series:
+                row.setdefault(s, 0)
+
+        return {"success": True, "data": data, "series": series}
+
+    except Exception as e:
+        logger.error(f"Error fetching payor mix trends: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/new-patient-trends")
+async def get_new_patient_trends(
+    time_period: str = "all",
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Monthly visit counts split into new vs. returning patients"""
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        start_date, end_date = calculate_date_range(time_period)
+
+        results = db.query(
+            extract('year', PatientVisit.visit_date).label('year'),
+            extract('month', PatientVisit.visit_date).label('month'),
+            PatientVisit.new_patient,
+            func.count(PatientVisit.id).label('count'),
+        ).filter(
+            and_(
+                PatientVisit.tenant_id == user.tenant_id,
+                PatientVisit.visit_date >= start_date,
+                PatientVisit.visit_date <= end_date,
+                PatientVisit.visit_date.isnot(None)
+            )
+        ).group_by('year', 'month', PatientVisit.new_patient).order_by('year', 'month').all()
+
+        months: dict = {}
+        for year, month, new_patient, count in results:
+            key = (int(year), int(month))
+            row = months.setdefault(key, {"label": f"{MONTH_ABBR[key[1]]} {key[0]}", "new": 0, "returning": 0})
+            bucket = "new" if (new_patient or "").strip().upper() in ("Y", "YES", "1", "TRUE") else "returning"
+            row[bucket] += count
+
+        data = [months[k] for k in sorted(months.keys())]
+        return {"success": True, "data": data}
+
+    except Exception as e:
+        logger.error(f"Error fetching new patient trends: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

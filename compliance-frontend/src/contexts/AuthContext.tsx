@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { apiFetch } from '../lib/api';
+import { apiFetch, clearSessionData } from '../lib/api';
 
 export interface AuthUser {
   user_id: string;
@@ -49,6 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isRefresh) {
       fetchMe().finally(() => setIsLoading(false));
     } else {
+      // Fresh tab: revoke any leftover session and clear locally stored
+      // results (they may contain patient details from another user).
+      clearSessionData();
       apiFetch('/api/auth/logout', { method: 'POST' })
         .catch(() => {})
         .finally(() => setIsLoading(false));
@@ -58,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = (user: AuthUser) => setUser(user);
 
   const logout = async () => {
+    clearSessionData();
     await apiFetch('/api/auth/logout', { method: 'POST' });
     setUser(null);
   };

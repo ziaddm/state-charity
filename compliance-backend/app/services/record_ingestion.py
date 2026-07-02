@@ -45,19 +45,6 @@ def parse_date(date_input) -> date:
     return None
 
 
-def read_submission_file(file_path: Path) -> List[Dict[str, Any]]:
-    """
-    Read the generated submission file (fixed-width format)
-    This is a simplified reader - in production you'd parse based on the spec
-    For MVP, we'll read the original CSV that was validated
-    """
-    records = []
-
-    # For now, return empty - we'll need to read from the artifact's canonical data
-    # The ReportAdapter should have this data available
-    return records
-
-
 def ingest_records_from_artifact(
     db: Session,
     artifact: Any,
@@ -88,7 +75,6 @@ def ingest_records_from_artifact(
 
     # Get the canonical data from the artifact
     if not hasattr(artifact, 'canonical_data') or not artifact.canonical_data:
-        print("❌ NO CANONICAL DATA IN ARTIFACT!")
         logger.warning("No canonical data available in artifact")
         return 0
 

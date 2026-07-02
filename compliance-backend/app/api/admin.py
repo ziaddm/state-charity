@@ -2,25 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, timezone
-from pathlib import Path
 import yaml
-import uuid
 import logging
 
 from app.database.connection import get_db
-from app.database.models import User, Tenant
+from app.database.models import User, Tenant, ValidationRun, PatientVisit
+from app.paths import TENANT_CONFIG_DIR
+from app.services.audit import record_event
+from app.services.authz import is_platform_admin, require_admin, require_platform_admin
 from app.services.tokens import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-
-def verify_admin(user_id: str, db: Session):
-    """Helper function to verify user is admin"""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user or user.role != 'admin':
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
+MAX_CONFIG_BYTES = 1 * 1024 * 1024  # tenant YAML configs are small
 
 
 class TenantResponse(BaseModel):
@@ -35,6 +30,14 @@ class TenantListResponse(BaseModel):
     tenants: list = []
 
 
+def _tenant_config_path(tenant_id: str):
+    """Resolve a tenant's YAML path, refusing anything that escapes the config dir."""
+    path = (TENANT_CONFIG_DIR / f"{tenant_id}.yaml").resolve()
+    if path.parent != TENANT_CONFIG_DIR.resolve():
+        raise HTTPException(status_code=400, detail="Invalid tenant id")
+    return path
+
+
 @router.post("/tenants", response_model=TenantResponse)
 async def create_tenant(
     tenant_name: str = Form(...),
@@ -44,36 +47,29 @@ async def create_tenant(
     db: Session = Depends(get_db)
 ):
     """
-    Create a new tenant with YAML configuration
+    Create a new tenant with YAML configuration.
 
-    Requires:
-    - tenant_name: Display name for the clinic/tenant
-    - state_code: 2-letter state code (e.g., IL, NJ, CA)
-    - config_file: YAML file with field mappings
-
-    Admin only.
+    Platform admin only.
     """
-    # Verify admin
-    verify_admin(user_id, db)
+    admin = require_platform_admin(user_id, db)
 
     try:
         # Read and validate YAML
-        yaml_content = await config_file.read()
+        yaml_content = await config_file.read(MAX_CONFIG_BYTES + 1)
+        if len(yaml_content) > MAX_CONFIG_BYTES:
+            raise HTTPException(status_code=413, detail="Configuration file too large (max 1 MB)")
         try:
             config = yaml.safe_load(yaml_content)
         except yaml.YAMLError as e:
             raise HTTPException(status_code=400, detail=f"Invalid YAML format: {str(e)}")
 
-        # Validate required keys in YAML
-        required_keys = ["field_mappings", "payer_source_mapping"]
-        missing_keys = [k for k in required_keys if k not in config]
-        if missing_keys:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid YAML structure. Missing keys: {', '.join(missing_keys)}"
-            )
+        if not isinstance(config, dict):
+            raise HTTPException(status_code=400, detail="Invalid YAML structure: expected a mapping at the top level")
 
-        # Validate field_mappings has required fields
+        # Validate required structure (must satisfy TenantMapper.validate_config)
+        if "field_mappings" not in config:
+            raise HTTPException(status_code=400, detail="Invalid YAML structure. Missing key: field_mappings")
+
         required_mapping_fields = [
             "patient_id", "last_name", "first_name", "date_of_birth",
             "visit_date", "payor_source"
@@ -88,9 +84,9 @@ async def create_tenant(
 
         # Generate tenant ID from name (lowercase, replace spaces with underscores)
         tenant_id = tenant_name.lower().replace(" ", "_").replace("-", "_")
-
-        # Remove any special characters
-        tenant_id = ''.join(c for c in tenant_id if c.isalnum() or c == '_')
+        tenant_id = ''.join(c for c in tenant_id if c.isalnum() or c == '_').strip('_')
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="Tenant name must contain letters or digits")
 
         # Check for duplicate tenant ID
         existing = db.query(Tenant).filter(Tenant.id == tenant_id).first()
@@ -106,25 +102,33 @@ async def create_tenant(
 
         state_code = state_code.upper()
 
-        # Create tenant in database
+        # The mapper loads configs by filename and requires a tenant_id key, so
+        # keep both in sync with the generated id regardless of what the
+        # uploaded file contained.
+        config["tenant_id"] = tenant_id
+        config.setdefault("tenant_name", tenant_name)
+
+        # Save YAML configuration file first — a tenant row without its config
+        # would be unusable.
+        TENANT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        yaml_path = _tenant_config_path(tenant_id)
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(config, f, sort_keys=False, allow_unicode=True)
+
+        # Create tenant in database. config_id ties the tenant to its YAML file
+        # (upload processing refuses tenants without it).
         tenant = Tenant(
             id=tenant_id,
             name=tenant_name,
             state_code=state_code,
+            config_id=tenant_id,
             created_at=datetime.now(timezone.utc)
         )
         db.add(tenant)
         db.commit()
         db.refresh(tenant)
 
-        # Save YAML configuration file
-        config_dir = Path("compliance-backend/config/tenants")
-        config_dir.mkdir(parents=True, exist_ok=True)
-
-        yaml_path = config_dir / f"{tenant_id}.yaml"
-        with open(yaml_path, "wb") as f:
-            f.write(yaml_content)
-
+        record_event(db, "tenant_created", user_id=admin.id, tenant_id=tenant_id)
         logger.info(f"Created tenant: {tenant_id} ({tenant_name}) by admin {user_id}")
 
         return TenantResponse(
@@ -146,14 +150,14 @@ async def list_tenants(
     db: Session = Depends(get_db)
 ):
     """
-    List all tenants in the system
-
-    Admin only.
+    List tenants: platform admins see all, tenant admins see their own.
     """
-    # Verify admin
-    verify_admin(user_id, db)
+    admin = require_admin(user_id, db)
 
-    tenants = db.query(Tenant).order_by(Tenant.created_at.desc()).all()
+    query = db.query(Tenant)
+    if not is_platform_admin(admin):
+        query = query.filter(Tenant.id == admin.tenant_id)
+    tenants = query.order_by(Tenant.created_at.desc()).all()
 
     return TenantListResponse(
         success=True,
@@ -176,22 +180,17 @@ async def delete_tenant(
     db: Session = Depends(get_db)
 ):
     """
-    Delete a tenant and its configuration
+    Delete a tenant and its configuration.
 
-    WARNING: This will NOT delete associated data (users, patient_visits, runs).
-    Only use this for cleaning up test tenants.
-
-    Admin only.
+    Platform admin only. Refuses if the tenant still has users, runs, or
+    ingested patient data.
     """
-    # Verify admin
-    verify_admin(user_id, db)
+    admin = require_platform_admin(user_id, db)
 
-    # Get tenant
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    # Check if tenant has users
     user_count = db.query(User).filter(User.tenant_id == tenant_id).count()
     if user_count > 0:
         raise HTTPException(
@@ -199,15 +198,26 @@ async def delete_tenant(
             detail=f"Cannot delete tenant. It has {user_count} associated user(s). Delete users first."
         )
 
-    # Delete tenant from database
+    run_count = db.query(ValidationRun).filter(ValidationRun.tenant_id == tenant_id).count()
+    visit_count = db.query(PatientVisit).filter(PatientVisit.tenant_id == tenant_id).count()
+    if run_count > 0 or visit_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot delete tenant. It has {run_count} run(s) and {visit_count} "
+                "patient record(s). Remove its data first."
+            )
+        )
+
     db.delete(tenant)
     db.commit()
 
     # Delete YAML config file if it exists
-    config_path = Path("compliance-backend/config/tenants") / f"{tenant_id}.yaml"
+    config_path = _tenant_config_path(tenant.config_id or tenant_id)
     if config_path.exists():
         config_path.unlink()
 
+    record_event(db, "tenant_deleted", user_id=admin.id, tenant_id=tenant_id)
     logger.info(f"Deleted tenant: {tenant_id} by admin {user_id}")
 
     return {
@@ -223,24 +233,23 @@ async def get_tenant_config(
     db: Session = Depends(get_db)
 ):
     """
-    Get the YAML configuration for a tenant
+    Get the YAML configuration for a tenant.
 
-    Admin only.
+    Platform admins may read any tenant's config; tenant admins only their own.
     """
-    # Verify admin
-    verify_admin(user_id, db)
+    admin = require_admin(user_id, db)
+    if tenant_id != admin.tenant_id and not is_platform_admin(admin):
+        raise HTTPException(status_code=403, detail="You can only view your own facility's configuration")
 
-    # Verify tenant exists
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    # Read YAML config
-    config_path = Path("compliance-backend/config/tenants") / f"{tenant_id}.yaml"
+    config_path = _tenant_config_path(tenant.config_id or tenant_id)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Configuration file not found")
 
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding="utf-8") as f:
         config_content = f.read()
 
     return {
@@ -257,17 +266,15 @@ async def list_all_users(
     db: Session = Depends(get_db)
 ):
     """
-    List all users in the system with their tenant information
-
-    Admin only.
+    List users: platform admins see everyone, tenant admins see their own tenant.
     """
-    # Verify admin
-    verify_admin(user_id, db)
+    admin = require_admin(user_id, db)
 
-    # Get all users with tenant info
-    users = db.query(User).order_by(User.created_at.desc()).all()
+    query = db.query(User)
+    if not is_platform_admin(admin):
+        query = query.filter(User.tenant_id == admin.tenant_id)
+    users = query.order_by(User.created_at.desc()).all()
 
-    # Get tenant mapping
     tenant_map = {t.id: t.name for t in db.query(Tenant).all()}
 
     return {

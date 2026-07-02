@@ -163,25 +163,40 @@ class TestControlTotalsValidation:
         assert result.passed is True
 
     def test_high_uncompensated_care_warning(self):
-        """Test warning for unusually high uncompensated care ratio"""
-        df = pd.DataFrame({
+        """Warning fires only when the payment column is entirely missing
+        (missing data), not when payments are legitimately low."""
+        df_missing = pd.DataFrame({
             "record_id": ["R001", "R002"],
-            "total_charges": ["10000.00", "20000.00"],  # Total: 30000
-            "total_payment_received": ["500.00", "500.00"]  # Total: 1000 (96.7% uncompensated)
+            "total_charges": ["10000.00", "20000.00"],
+            "total_payment_received": [None, None]  # entirely missing
         })
 
         control_totals = ControlTotals(
+            row_count=2,
+            sum_total_charges=30000.00,
+            sum_total_payment_received=0.0,
+            by_payor_source={},
+            by_claim_type={}
+        )
+
+        result = validate_control_totals(df_missing, control_totals, "NJ")
+        assert any(w["type"] == "high_uncompensated_ratio" for w in result.warnings)
+
+        # Low-but-present payments are legitimate charity care — no warning
+        df_low = pd.DataFrame({
+            "record_id": ["R001", "R002"],
+            "total_charges": ["10000.00", "20000.00"],
+            "total_payment_received": ["500.00", "500.00"]
+        })
+        control_totals_low = ControlTotals(
             row_count=2,
             sum_total_charges=30000.00,
             sum_total_payment_received=1000.00,
             by_payor_source={},
             by_claim_type={}
         )
-
-        result = validate_control_totals(df, control_totals, "NJ")
-
-        # Should have warning for high uncompensated ratio
-        assert any(w["type"] == "high_uncompensated_ratio" for w in result.warnings)
+        result_low = validate_control_totals(df_low, control_totals_low, "NJ")
+        assert not any(w["type"] == "high_uncompensated_ratio" for w in result_low.warnings)
 
     def test_negative_charges_warning(self):
         """Test warning for negative charge values"""
@@ -272,8 +287,9 @@ class TestDateRangeValidation:
 
         result = validate_control_totals(df, control_totals, "NJ")
 
-        # Should have wide date range warning
-        assert any(w["type"] == "wide_date_range" for w in result.warnings)
+        # Wide date range is informational only (never blocks)
+        assert any(i["type"] == "wide_date_range" for i in result.info)
+        assert not any(w["type"] == "wide_date_range" for w in result.warnings)
 
     def test_future_dates_warning(self):
         """Test warning for future visit dates"""
@@ -340,8 +356,9 @@ class TestPayorDistribution:
 
         result = validate_control_totals(df, control_totals, "NJ")
 
-        # Should have single payor warning
-        assert any(w["type"] == "single_payor_only" for w in result.warnings)
+        # Single payor is informational only (never blocks)
+        assert any(i["type"] == "single_payor_only" for i in result.info)
+        assert not any(w["type"] == "single_payor_only" for w in result.warnings)
 
     def test_single_payor_small_file_no_warning(self):
         """Test single payor in small file (<=10 rows) doesn't warn"""

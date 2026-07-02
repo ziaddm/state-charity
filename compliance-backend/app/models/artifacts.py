@@ -60,12 +60,14 @@ class ValidationResult:
     Error: "Row 42, field 'patient_id' - Required field is missing (code E001)"
     Warning: "Row 100, field 'zip' - Value '12345678' longer than expected 5 digits (code W001)"
     """
-    passed: bool  # True if no errors found (warnings don't block submission)
+    passed: bool  # True if no blocking issues found (errors AND warnings block)
     errors: List[Dict[str, Any]] = field(default_factory=list)  # List of error messages
     warnings: List[Dict[str, Any]] = field(default_factory=list)  # List of warning messages
+    info: List[Dict[str, Any]] = field(default_factory=list)  # Informational notices — never block
     row_count: int = 0  # How many rows were checked
     error_count: int = 0  # Total number of errors found
     warning_count: int = 0  # Total number of warnings found
+    info_count: int = 0  # Total number of informational notices
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())  # When this check happened
 
 @dataclass
@@ -191,8 +193,10 @@ class ReportArtifact:
                     "passed": self.validation.passed,
                     "error_count": self.validation.error_count,
                     "warning_count": self.validation.warning_count,
+                    "info_count": self.validation.info_count,
                     "errors": self.validation.errors,
                     "warnings": self.validation.warnings,
+                    "info": self.validation.info,
                     "row_count": self.validation.row_count,
                     "timestamp": self.validation.timestamp,
                 }, f, indent=2)

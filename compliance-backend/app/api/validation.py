@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Tuple
+import os
 import uuid
 import tempfile
 import shutil
@@ -13,13 +14,19 @@ import zipfile
 import io
 
 from app.database.connection import get_db
-from app.database.models import ValidationRun, ValidationError, User, Tenant
+from app.database.models import ValidationRun, User, Tenant
+from app.paths import OUTPUT_DIR
+from app.services.audit import record_event
 from app.services.tokens import get_current_user
 from app.adapters.report_adapter import ReportAdapter
 from app.services.record_ingestion import ingest_records_from_artifact, calculate_file_hash
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/validation", tags=["validation"])
+
+ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+
 
 # Background task for ingestion
 def background_ingest_task(run_id: str, artifact: any, tenant_id: str, file_hash: str, source_file_path: str):
@@ -52,6 +59,7 @@ def background_ingest_task(run_id: str, artifact: any, tenant_id: str, file_hash
             run.records_ingested = records_ingested
             run.ingestion_status = "completed"
             run.status = "completed"
+            run.completed_at = datetime.now(timezone.utc)
             db.commit()
 
         logger.info(f"[BACKGROUND] Completed ingestion for run {run_id}: {records_ingested} records")
@@ -66,17 +74,13 @@ def background_ingest_task(run_id: str, artifact: any, tenant_id: str, file_hash
     finally:
         db.close()
 
-class ValidationResponse(BaseModel):
-    success: bool
-    run_id: Optional[str] = None
-    message: Optional[str] = None
-    error: Optional[str] = None
 
 class ValidationErrorDetail(BaseModel):
     code: str
     field: str
     row: int
     message: str
+
 
 class UploadResultResponse(BaseModel):
     success: bool
@@ -90,13 +94,42 @@ class UploadResultResponse(BaseModel):
     records_ingested: int = 0
     errors: list[ValidationErrorDetail] = []
 
+
 class RunStatusResponse(BaseModel):
     run_id: str
     status: str
     ingestion_status: Optional[str] = None
     records_ingested: int = 0
     error_count: int = 0
+    warning_count: int = 0
     total_records: int = 0
+
+
+def _get_run_for_user(run_id: str, user_id: str, db: Session) -> Tuple[ValidationRun, User]:
+    """Load a run, authorizing by tenant: users may access any run belonging to
+    their own facility (History is facility-wide)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Validation run not found")
+
+    if run.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    return run, user
+
+
+def _run_output_dir(run: ValidationRun, db: Session) -> Path:
+    """Resolve the artifact directory for a run: output/{config_id}/{run_id}."""
+    tenant = db.query(Tenant).filter(Tenant.id == run.tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    tenant_name = tenant.config_id or tenant.name.lower().replace(" ", "_")
+    return OUTPUT_DIR / tenant_name / run.id
+
 
 @router.post("/upload", response_model=UploadResultResponse)
 async def upload_file(
@@ -106,7 +139,7 @@ async def upload_file(
     db: Session = Depends(get_db)
 ):
     """Upload and validate a compliance document - returns immediately after validation"""
-    temp_file_path = None
+    temp_dir = None
     try:
         # Get user and validate they exist
         user = db.query(User).filter(User.id == user_id).first()
@@ -118,33 +151,25 @@ async def upload_file(
         if not tenant:
             raise HTTPException(status_code=404, detail="Tenant not found")
 
-        # Create validation run record
-        run = ValidationRun(
-            id=str(uuid.uuid4()),
-            tenant_id=user.tenant_id,
-            created_by_user_id=user_id,
-            source_filename=file.filename,
-            status="processing",
-            started_at=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc)
-        )
+        # Validate file type before doing any work. The original filename is
+        # kept only as display metadata — it never touches the filesystem.
+        extension = Path(file.filename or "").suffix.lower()
+        if extension not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type '{extension or 'none'}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+            )
 
-        db.add(run)
-        db.commit()
-        db.refresh(run)
-
-        # Save uploaded file to temp location
-        temp_dir = tempfile.mkdtemp()
-        temp_file_path = Path(temp_dir) / file.filename
-
-        with open(temp_file_path, 'wb') as f:
-            contents = await file.read()
-            f.write(contents)
-
-        # Process file using ReportAdapter
-        logger.info(f"Processing file: {file.filename} for run {run.id}")
-
-        adapter = ReportAdapter(config_dir="config", output_dir="output")
+        # Enforce the size cap while reading so oversized uploads cannot
+        # exhaust memory (read one byte past the limit to detect overflow).
+        contents = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(contents) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit"
+            )
+        if not contents:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
         # Resolve config_id (YAML filename key) from the tenant record
         state_code = tenant.state_code or "NJ"
@@ -155,6 +180,34 @@ async def upload_file(
                 detail=f"Tenant '{tenant.name}' has no config_id set — cannot locate mapping config"
             )
 
+        # Create validation run record
+        run = ValidationRun(
+            id=str(uuid.uuid4()),
+            tenant_id=user.tenant_id,
+            created_by_user_id=user_id,
+            state_code=state_code,
+            source_filename=file.filename,
+            source_file_hash=calculate_file_hash(contents),
+            status="processing",
+            started_at=datetime.now(timezone.utc),
+            created_at=datetime.now(timezone.utc)
+        )
+
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        record_event(db, "file_uploaded", user_id=user_id, tenant_id=user.tenant_id, run_id=run.id)
+
+        # Save uploaded file under a generated name (never the client filename)
+        temp_dir = tempfile.mkdtemp()
+        temp_file_path = Path(temp_dir) / f"upload_{uuid.uuid4().hex}{extension}"
+        with open(temp_file_path, 'wb') as f:
+            f.write(contents)
+
+        # Process file using ReportAdapter (config/output resolved via app.paths)
+        logger.info(f"Processing file: {file.filename} for run {run.id}")
+        adapter = ReportAdapter()
+
         artifact = adapter.generate(
             tenant_id=config_id,
             state_code=state_code,
@@ -164,96 +217,93 @@ async def upload_file(
 
         # Update run status based on validation results - FAIL CLOSED
         # ANY errors = complete failure, no partial success
-        if artifact.validation:
-            error_count = len(artifact.validation.errors)
-            logger.info(f"[RUN {run.id}] Validation completed with {error_count} errors")
-            if error_count > 0:
-                run.status = "errors"
-                logger.error(f"[RUN {run.id}] Setting status to 'errors' - validation failed")
-                # Log first few errors for debugging
-                for i, err in enumerate(artifact.validation.errors[:3]):
-                    logger.error(f"[RUN {run.id}]   Error {i+1}: [{err.get('code', 'NOCODE')}] {err.get('field', 'NOFIELD')} - {err.get('message', 'NO_MSG')[:100]}")
-            else:
-                run.status = "completed"
-                logger.info(f"[RUN {run.id}] Validation passed - 0 errors")
-        else:
-            run.status = "completed"
-            error_count = 0
+        errors = artifact.validation.errors if artifact.validation else []
+        error_count = len(errors)
+        row_count = artifact.validation.row_count if artifact.validation else 0
+
+        if artifact.validation is None:
             logger.warning(f"[RUN {run.id}] No validation object - assuming pass (THIS SHOULD NOT HAPPEN)")
 
-        # Save submission file path and other metadata
+        # Persist counters so History and status polling report real numbers.
+        # valid_count: rows with no blocking issue. File-level errors (row not
+        # a number) mean no row can be trusted.
+        error_rows = {e.get("row") for e in errors if isinstance(e.get("row"), int)}
+        has_file_level_error = any(not isinstance(e.get("row"), int) for e in errors)
+        run.record_count = row_count
+        run.error_count = error_count
+        run.warning_count = artifact.validation.warning_count if artifact.validation else 0
+        if error_count == 0:
+            run.valid_count = row_count
+        elif has_file_level_error:
+            run.valid_count = 0
+        else:
+            run.valid_count = max(row_count - len(error_rows), 0)
+
         if artifact.submission_file_path:
             run.submission_file_path = str(artifact.submission_file_path)
 
-        if artifact.control_totals:
-            run.record_count = artifact.control_totals.row_count
-
-        # Store the full artifact manifest for later reference
-        run.manifest = str(artifact.manifest) if artifact.manifest else None
-
-        db.commit()
-
-        # FAIL CLOSED: Queue ingestion ONLY if validation passed with ZERO errors
         if error_count == 0:
-            # Perfect validation - set initial ingestion status
+            # Perfect validation - queue background ingestion
             run.ingestion_status = "pending"
             run.status = "ready"  # Validation complete, files ready for download
             db.commit()
 
-            # Queue background ingestion
-            file_hash = calculate_file_hash(contents)
-            logger.info(f"[RUN {run.id}] ✓ Validation passed (0 errors) - queuing background ingestion")
+            logger.info(f"[RUN {run.id}] Validation passed (0 blocking issues) - queuing background ingestion")
             background_tasks.add_task(
                 background_ingest_task,
                 run.id,
                 artifact,
                 user.tenant_id,
-                file_hash,
+                run.source_file_hash,
                 str(temp_file_path)
             )
         else:
             # FAIL CLOSED: ANY errors = complete rejection, no ingestion, no files
             run.ingestion_status = None
             run.status = "errors"
-            logger.info(f"[RUN {run.id}] ✗ Validation FAILED: {error_count} errors found - BLOCKING upload and ingestion")
+            run.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            logger.info(f"[RUN {run.id}] Validation FAILED: {error_count} blocking issues - upload rejected")
+            record_event(db, "validation_failed", user_id=user_id, tenant_id=user.tenant_id, run_id=run.id)
 
-        # Prepare response - collect ALL errors from validation
+        # Prepare response - collect ALL blocking issues
         errors_list = []
+        for error in errors:
+            row_val = error.get("row", 0)
+            if not isinstance(row_val, int):
+                try:
+                    row_val = int(row_val)
+                except (ValueError, TypeError):
+                    row_val = 0
 
-        if artifact.validation:
-            for error in artifact.validation.errors:
-                row_val = error.get("row", 0)
-                # Convert row to int if it's a string
-                if isinstance(row_val, str):
-                    try:
-                        row_val = int(row_val)
-                    except (ValueError, TypeError):
-                        row_val = 0
-
-                errors_list.append(ValidationErrorDetail(
-                    code=error.get("code", "UNKNOWN"),
-                    field=error.get("field", ""),
-                    row=row_val,
-                    message=error.get("message", "")
-                ))
-
-        total_records = artifact.validation.row_count if artifact.validation else 0
+            errors_list.append(ValidationErrorDetail(
+                code=error.get("code", "UNKNOWN"),
+                field=error.get("field", ""),
+                row=row_val,
+                message=error.get("message", "")
+            ))
 
         response = UploadResultResponse(
             success=True,
             run_id=run.id,
             status=run.status,
             ingestion_status=run.ingestion_status,
-            message=f"File {file.filename} validated - {error_count} errors found" if error_count > 0 else f"File {file.filename} validated successfully - ingestion queued",
+            message=(
+                f"File {file.filename} validated - {error_count} blocking issues found"
+                if error_count > 0
+                else f"File {file.filename} validated successfully - ingestion queued"
+            ),
             error_count=error_count,
-            total_records=total_records,
+            total_records=row_count,
             records_ingested=0,  # Will be updated by background task
-            errors=errors_list  # Return ALL errors, not just first 10
+            errors=errors_list
         )
 
         logger.info(f"[RUN {run.id}] Returning response: status={response.status}, error_count={response.error_count}, ingestion_status={response.ingestion_status}")
         return response
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing file: {str(e)}", exc_info=True)
         return UploadResultResponse(
@@ -263,11 +313,12 @@ async def upload_file(
 
     finally:
         # Clean up temp files
-        if temp_file_path and Path(temp_file_path).exists():
+        if temp_dir and Path(temp_dir).exists():
             try:
-                shutil.rmtree(Path(temp_file_path).parent)
+                shutil.rmtree(temp_dir)
             except Exception as e:
                 logger.warning(f"Failed to clean up temp file: {e}")
+
 
 @router.get("/status/{run_id}", response_model=RunStatusResponse)
 async def get_run_status(
@@ -276,13 +327,7 @@ async def get_run_status(
     db: Session = Depends(get_db)
 ):
     """Poll status of a validation run (for real-time updates)"""
-    run = db.query(ValidationRun).filter(
-        ValidationRun.id == run_id,
-        ValidationRun.created_by_user_id == user_id
-    ).first()
-
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
+    run, _ = _get_run_for_user(run_id, user_id, db)
 
     return RunStatusResponse(
         run_id=run.id,
@@ -294,15 +339,20 @@ async def get_run_status(
         total_records=run.record_count or 0
     )
 
+
 @router.get("/runs")
 async def get_runs(
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all validation runs for current user, newest first"""
+    """Get all validation runs for the current user's facility, newest first"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
     runs = (
         db.query(ValidationRun)
-        .filter(ValidationRun.created_by_user_id == user_id)
+        .filter(ValidationRun.tenant_id == user.tenant_id)
         .order_by(ValidationRun.created_at.desc())
         .all()
     )
@@ -329,32 +379,6 @@ async def get_runs(
         ]
     }
 
-@router.get("/tenants")
-async def get_tenants(
-    user_id: str = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get all available tenants for admin user"""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Only admins can see all tenants
-    if user.role != 'admin':
-        raise HTTPException(status_code=403, detail="Only admins can view tenants")
-
-    tenants = db.query(Tenant).all()
-
-    return {
-        "success": True,
-        "tenants": [
-            {
-                "id": t.id,
-                "name": t.name
-            }
-            for t in tenants
-        ]
-    }
 
 @router.get("/download/{run_id}")
 async def download_result(
@@ -363,16 +387,8 @@ async def download_result(
     db: Session = Depends(get_db)
 ):
     """Download the submission file from a validation run"""
-    # Get the validation run
-    run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Validation run not found")
+    run, user = _get_run_for_user(run_id, user_id, db)
 
-    # Verify the user owns this run
-    if run.created_by_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    # Check if submission file path exists
     if not run.submission_file_path:
         raise HTTPException(status_code=404, detail="Submission file not generated yet")
 
@@ -380,12 +396,14 @@ async def download_result(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    # Return the file
+    record_event(db, "submission_downloaded", user_id=user_id, tenant_id=user.tenant_id, run_id=run_id)
+
     return FileResponse(
         path=file_path,
         filename=file_path.name,
         media_type='text/plain'
     )
+
 
 @router.get("/download/{run_id}/validation")
 async def download_validation_report(
@@ -394,41 +412,19 @@ async def download_validation_report(
     db: Session = Depends(get_db)
 ):
     """Download the validation report (JSON) from a validation run"""
-    # Get the validation run
-    run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Validation run not found")
+    run, _ = _get_run_for_user(run_id, user_id, db)
+    run_dir = _run_output_dir(run, db)
 
-    # Verify the user owns this run
-    if run.created_by_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    # The ReportAdapter saves to: output/{tenant_name}/{run_id}/{run_id}_validation.json
-    # We store tenant_id (UUID), so we need to look up tenant name
-    tenant = db.query(Tenant).filter(Tenant.id == run.tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    tenant_name = tenant.config_id or tenant.name.lower().replace(" ", "_")
-    run_dir = Path("output") / tenant_name / run_id
-
-    # Try multiple possible file names
-    validation_file = None
-    for filename in [f"{run_id}_validation.json", "validation.json"]:
-        candidate = run_dir / filename
-        if candidate.exists():
-            validation_file = candidate
-            break
-
-    if not validation_file:
+    validation_file = run_dir / f"{run_id}_validation.json"
+    if not validation_file.exists():
         raise HTTPException(status_code=404, detail="Validation report not found")
 
-    # Return the file
     return FileResponse(
         path=validation_file,
         filename=f"{run_id}_validation.json",
         media_type='application/json'
     )
+
 
 @router.get("/download/{run_id}/control-totals")
 async def download_control_totals(
@@ -437,21 +433,10 @@ async def download_control_totals(
     db: Session = Depends(get_db)
 ):
     """Download the control totals report (JSON) from a validation run"""
-    run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Validation run not found")
+    run, _ = _get_run_for_user(run_id, user_id, db)
+    run_dir = _run_output_dir(run, db)
 
-    if run.created_by_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    tenant = db.query(Tenant).filter(Tenant.id == run.tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    tenant_name = tenant.config_id or tenant.name.lower().replace(" ", "_")
-    run_dir = Path("output") / tenant_name / run_id
     control_totals_file = run_dir / f"{run_id}_control_totals.json"
-
     if not control_totals_file.exists():
         raise HTTPException(status_code=404, detail="Control totals report not found")
 
@@ -461,6 +446,7 @@ async def download_control_totals(
         media_type='application/json'
     )
 
+
 @router.get("/download/{run_id}/manifest")
 async def download_manifest(
     run_id: str,
@@ -468,21 +454,10 @@ async def download_manifest(
     db: Session = Depends(get_db)
 ):
     """Download the manifest report (JSON) from a validation run"""
-    run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Validation run not found")
+    run, _ = _get_run_for_user(run_id, user_id, db)
+    run_dir = _run_output_dir(run, db)
 
-    if run.created_by_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    tenant = db.query(Tenant).filter(Tenant.id == run.tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    tenant_name = tenant.config_id or tenant.name.lower().replace(" ", "_")
-    run_dir = Path("output") / tenant_name / run_id
     manifest_file = run_dir / f"{run_id}_manifest.json"
-
     if not manifest_file.exists():
         raise HTTPException(status_code=404, detail="Manifest report not found")
 
@@ -492,6 +467,7 @@ async def download_manifest(
         media_type='application/json'
     )
 
+
 @router.get("/download/{run_id}/report")
 async def download_report_bundle(
     run_id: str,
@@ -499,41 +475,15 @@ async def download_report_bundle(
     db: Session = Depends(get_db)
 ):
     """Download all report artifacts (validation, control-totals, manifest) as a zip file"""
-
-    # Get the validation run
-    run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Validation run not found")
-
-    # Verify the user owns this run
-    if run.created_by_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    # Get tenant info
-    tenant = db.query(Tenant).filter(Tenant.id == run.tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    tenant_name = tenant.config_id or tenant.name.lower().replace(" ", "_")
-    run_dir = Path("output") / tenant_name / run_id
+    run, user = _get_run_for_user(run_id, user_id, db)
+    run_dir = _run_output_dir(run, db)
 
     # Collect all report artifacts
     artifacts_to_zip = []
-
-    # Validation report
-    validation_file = run_dir / f"{run_id}_validation.json"
-    if validation_file.exists():
-        artifacts_to_zip.append((validation_file, f"{run_id}_validation.json"))
-
-    # Control totals
-    control_totals_file = run_dir / f"{run_id}_control_totals.json"
-    if control_totals_file.exists():
-        artifacts_to_zip.append((control_totals_file, f"{run_id}_control_totals.json"))
-
-    # Manifest
-    manifest_file = run_dir / f"{run_id}_manifest.json"
-    if manifest_file.exists():
-        artifacts_to_zip.append((manifest_file, f"{run_id}_manifest.json"))
+    for suffix in ("validation", "control_totals", "manifest"):
+        candidate = run_dir / f"{run_id}_{suffix}.json"
+        if candidate.exists():
+            artifacts_to_zip.append((candidate, candidate.name))
 
     if not artifacts_to_zip:
         raise HTTPException(status_code=404, detail="No report artifacts found")
@@ -545,13 +495,14 @@ async def download_report_bundle(
             zip_file.write(file_path, arcname=arcname)
 
     zip_buffer.seek(0)
+    record_event(db, "report_downloaded", user_id=user_id, tenant_id=user.tenant_id, run_id=run_id)
 
-    # Return zip file as streaming response
     return StreamingResponse(
         iter([zip_buffer.getvalue()]),
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={run_id}_report.zip"}
     )
+
 
 @router.get("/artifacts/{run_id}")
 async def list_artifacts(
@@ -560,19 +511,8 @@ async def list_artifacts(
     db: Session = Depends(get_db)
 ):
     """List all available artifacts for a validation run"""
-    run = db.query(ValidationRun).filter(ValidationRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Validation run not found")
-
-    if run.created_by_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    tenant = db.query(Tenant).filter(Tenant.id == run.tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    tenant_name = tenant.config_id or tenant.name.lower().replace(" ", "_")
-    run_dir = Path("output") / tenant_name / run_id
+    run, _ = _get_run_for_user(run_id, user_id, db)
+    run_dir = _run_output_dir(run, db)
 
     artifacts = {
         "run_id": run_id,
@@ -581,7 +521,7 @@ async def list_artifacts(
 
     # Check for each artifact type
     artifact_types = {
-        "submission": (run_dir / f"{run_id}.txt", "fixed-width submission file"),
+        "submission": (Path(run.submission_file_path) if run.submission_file_path else run_dir / f"{run_id}.txt", "fixed-width submission file"),
         "validation": (run_dir / f"{run_id}_validation.json", "validation results"),
         "control_totals": (run_dir / f"{run_id}_control_totals.json", "control totals"),
         "manifest": (run_dir / f"{run_id}_manifest.json", "processing manifest")

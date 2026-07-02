@@ -35,6 +35,7 @@ def validate_control_totals(
     """
     errors = []
     warnings = []
+    info = []
 
     # 1. Check for duplicate record IDs
     if 'record_id' in df.columns:
@@ -165,11 +166,12 @@ def validate_control_totals(
                 max_date = valid_dates.max()
                 date_span = (max_date - min_date).days
 
-                # Warn if date span exceeds 2 years (unusual for single submission)
+                # Note if date span exceeds 2 years. Unusual, but a long span is
+                # not a format problem — informational only, never blocks.
                 if date_span > 730:
-                    warnings.append({
-                        "code": "W400",
-                        "severity": "warning",
+                    info.append({
+                        "code": "I400",
+                        "severity": "info",
                         "type": "wide_date_range",
                         "field": "visit_date",
                         "row": "All",
@@ -196,14 +198,15 @@ def validate_control_totals(
             # Don't fail validation on date parsing errors (already caught in field validation)
             pass
 
-    # 7. Check payor distribution (warn if 100% one payor - unusual)
+    # 7. Note payor distribution (100% one payor is unusual but perfectly
+    # legitimate for some clinics — informational only, never blocks)
     if 'payor_source' in df.columns:
         payor_counts = df['payor_source'].value_counts()
         if len(payor_counts) == 1 and len(df) > 10:
             single_payor = payor_counts.index[0]
-            warnings.append({
-                "code": "W300",
-                "severity": "warning",
+            info.append({
+                "code": "I300",
+                "severity": "info",
                 "type": "single_payor_only",
                 "field": "payor_source",
                 "row": "All",
@@ -217,9 +220,11 @@ def validate_control_totals(
         passed=passed,
         errors=errors,
         warnings=warnings,
+        info=info,
         row_count=len(df),
         error_count=len(errors),
-        warning_count=len(warnings)
+        warning_count=len(warnings),
+        info_count=len(info)
     )
 
 

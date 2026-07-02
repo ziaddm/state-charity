@@ -25,7 +25,7 @@ class TestFieldValidation:
     def test_required_field_missing(self):
         """Test that missing required fields generate errors"""
         field_spec = {"required": True}
-        errors, warnings = _validate_field("patient_id", "", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("patient_id", "", field_spec, row_num=1)
 
         assert len(errors) == 1
         assert errors[0]["code"] == "E001"
@@ -35,24 +35,25 @@ class TestFieldValidation:
     def test_required_field_present(self):
         """Test that present required fields pass"""
         field_spec = {"required": True}
-        errors, warnings = _validate_field("patient_id", "12345", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("patient_id", "12345", field_spec, row_num=1)
 
         assert len(errors) == 0
         assert len(warnings) == 0
 
     def test_warn_if_missing(self):
-        """Test that warn_if_missing generates warnings not errors"""
+        """warn_if_missing produces a non-blocking informational notice"""
         field_spec = {"warn_if_missing": True}
-        errors, warnings = _validate_field("optional_field", "", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("optional_field", "", field_spec, row_num=1)
 
         assert len(errors) == 0
-        assert len(warnings) == 1
-        assert warnings[0]["code"] == "W002"
+        assert len(warnings) == 0
+        assert len(info) == 1
+        assert info[0]["code"] == "I002"
 
     def test_length_max_exceeded(self):
         """Test max length validation"""
         field_spec = {"length": {"max": 5}}
-        errors, warnings = _validate_field("zip", "123456", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("zip", "123456", field_spec, row_num=1)
 
         assert len(errors) == 1
         assert errors[0]["code"] == "E002"
@@ -61,14 +62,14 @@ class TestFieldValidation:
     def test_length_max_ok(self):
         """Test value at exactly max length passes"""
         field_spec = {"length": {"max": 5}}
-        errors, warnings = _validate_field("zip", "12345", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("zip", "12345", field_spec, row_num=1)
 
         assert len(errors) == 0
 
     def test_length_min_required_field(self):
         """Test min length on required field generates error"""
         field_spec = {"required": True, "length": {"min": 3}}
-        errors, warnings = _validate_field("code", "AB", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("code", "AB", field_spec, row_num=1)
 
         assert len(errors) == 1
         assert errors[0]["code"] == "E003"
@@ -76,7 +77,7 @@ class TestFieldValidation:
     def test_length_min_optional_field(self):
         """Test min length on optional field generates warning"""
         field_spec = {"required": False, "length": {"min": 3}}
-        errors, warnings = _validate_field("code", "AB", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("code", "AB", field_spec, row_num=1)
 
         assert len(warnings) == 1
         assert warnings[0]["code"] == "W001"
@@ -84,7 +85,7 @@ class TestFieldValidation:
     def test_enum_valid_value(self):
         """Test valid enum value passes"""
         field_spec = {"enum": ["M", "F", "U"]}
-        errors, warnings = _validate_field("gender", "M", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("gender", "M", field_spec, row_num=1)
 
         assert len(errors) == 0
         assert len(warnings) == 0
@@ -92,7 +93,7 @@ class TestFieldValidation:
     def test_enum_invalid_value_warning(self):
         """Test invalid enum generates warning by default"""
         field_spec = {"enum": ["M", "F", "U"]}
-        errors, warnings = _validate_field("gender", "X", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("gender", "X", field_spec, row_num=1)
 
         assert len(warnings) == 1
         assert warnings[0]["code"] == "W004"
@@ -103,7 +104,7 @@ class TestFieldValidation:
             "enum": ["A", "B", "C"],
             "severity": {"invalid_enum": "error"}
         }
-        errors, warnings = _validate_field("category", "D", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("category", "D", field_spec, row_num=1)
 
         assert len(errors) == 1
         assert errors[0]["code"] == "E004"
@@ -111,7 +112,7 @@ class TestFieldValidation:
     def test_bounds_below_min_warning(self):
         """Test value below minimum generates warning by default"""
         field_spec = {"bounds": {"min": 0}}
-        errors, warnings = _validate_field("charges", -100, field_spec, row_num=1)
+        errors, warnings, info = _validate_field("charges", -100, field_spec, row_num=1)
 
         assert len(warnings) == 1
         assert warnings[0]["code"] == "W005"
@@ -119,7 +120,7 @@ class TestFieldValidation:
     def test_bounds_above_max_warning(self):
         """Test value above maximum generates warning by default"""
         field_spec = {"bounds": {"max": 120}}
-        errors, warnings = _validate_field("age", 150, field_spec, row_num=1)
+        errors, warnings, info = _validate_field("age", 150, field_spec, row_num=1)
 
         assert len(warnings) == 1
         assert warnings[0]["code"] == "W006"
@@ -127,7 +128,7 @@ class TestFieldValidation:
     def test_bounds_within_range(self):
         """Test value within bounds passes"""
         field_spec = {"bounds": {"min": 0, "max": 120}}
-        errors, warnings = _validate_field("age", 45, field_spec, row_num=1)
+        errors, warnings, info = _validate_field("age", 45, field_spec, row_num=1)
 
         assert len(errors) == 0
         assert len(warnings) == 0
@@ -135,7 +136,7 @@ class TestFieldValidation:
     def test_empty_optional_field(self):
         """Test empty optional field passes without issues"""
         field_spec = {"required": False, "length": {"max": 10}}
-        errors, warnings = _validate_field("optional", "", field_spec, row_num=1)
+        errors, warnings, info = _validate_field("optional", "", field_spec, row_num=1)
 
         assert len(errors) == 0
         assert len(warnings) == 0

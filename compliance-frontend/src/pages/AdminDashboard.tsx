@@ -163,19 +163,27 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
       const data = await response.json();
       setMessageType('success');
-      setMessage(`User created: ${data.email}. Temp password sent to their email.`);
+      if (data.email_sent === false && data.temp_password) {
+        // Email failed — show the password once so the admin can pass it on
+        // through a secure channel. Keep the form open until dismissed.
+        setMessage(
+          `User created: ${data.email}. Email delivery failed — temporary password: ${data.temp_password} ` +
+          `(share it securely; they must change it on first login).`
+        );
+      } else {
+        setMessage(`User created: ${data.email}. Temp password sent to their email.`);
+        // Close form after 2 seconds
+        setTimeout(() => {
+          setShowUserForm(false);
+          setMessage('');
+        }, 2000);
+      }
       setEmail('');
       setRole('user');
       setTenantId('');
 
       // Refresh all data
       await loadData();
-
-      // Close form after 2 seconds
-      setTimeout(() => {
-        setShowUserForm(false);
-        setMessage('');
-      }, 2000);
     } catch (error) {
       setMessageType('error');
       setMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);

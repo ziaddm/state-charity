@@ -10,9 +10,12 @@ Checks:
 - Cross-field rules
 """
 
+import re
+
 import pandas as pd
 from typing import List, Dict, Any, Tuple
 from app.models.artifacts import ValidationResult
+from app.schema.nj_schema import CODESETS
 
 
 # Validation severity defaults
@@ -29,23 +32,49 @@ VALIDATION_DEFAULTS = {
 }
 
 
+def _is_empty(value: Any) -> bool:
+    """True for None, empty string, and pandas NA/NaN values."""
+    if value is None or value == "":
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _resolve_enum(field_spec: Dict[str, Any]):
+    """Return the list of allowed values for a field, resolving enum_ref
+    against the state CODESETS. Returns None when no enum applies."""
+    if "enum" in field_spec:
+        return field_spec["enum"]
+    ref = field_spec.get("enum_ref")
+    if ref:
+        codeset = CODESETS.get(ref)
+        if isinstance(codeset, dict):
+            return list(codeset.keys())
+        if isinstance(codeset, (list, tuple, set)):
+            return list(codeset)
+    return None
+
+
 def _validate_field(
     field_name: str,
     value: Any,
     field_spec: Dict[str, Any],
     row_num: int
-) -> Tuple[List[Dict], List[Dict]]:
+) -> Tuple[List[Dict], List[Dict], List[Dict]]:
     """
     Validate a single field value against its schema specification.
 
     Returns:
-        Tuple of (errors, warnings) lists
+        Tuple of (errors, warnings, info) lists
     """
     errors = []
     warnings = []
+    info = []
 
     # Check required
-    if field_spec.get("required", False) and (value is None or value == ""):
+    if field_spec.get("required", False) and _is_empty(value):
         errors.append({
             "code": "E001",
             "severity": "error",
@@ -55,23 +84,24 @@ def _validate_field(
             "message": f"Required field '{field_name}' is empty - Provide a value for this field",
             "action": f"Fill in {field_name} for row {row_num}"
         })
-        return errors, warnings
+        return errors, warnings, info
 
-    # Check warn_if_missing for optional fields
-    if field_spec.get("warn_if_missing", False) and (value is None or value == ""):
-        warnings.append({
-            "code": "W002",
-            "severity": "warning",
+    # An empty optional-but-recommended field is a data quality note, not a
+    # format problem — informational only, never blocks.
+    if field_spec.get("warn_if_missing", False) and _is_empty(value):
+        info.append({
+            "code": "I002",
+            "severity": "info",
             "type": "recommended_missing",
             "field": field_name,
             "row": row_num,
             "message": f"Recommended field '{field_name}' is empty - Consider adding data for better reporting quality",
             "action": f"Add {field_name} value if available"
         })
-        return errors, warnings
+        return errors, warnings, info
 
-    if value is None or value == "":
-        return errors, warnings
+    if _is_empty(value):
+        return errors, warnings, info
 
     # Check length
     length_spec = field_spec.get("length", {})
@@ -104,9 +134,9 @@ def _validate_field(
             else:
                 warnings.append(issue)
 
-    # Check enum
-    if "enum" in field_spec:
-        allowed_values = field_spec["enum"]
+    # Check enum (literal `enum` or `enum_ref` resolved against state CODESETS)
+    allowed_values = _resolve_enum(field_spec)
+    if allowed_values is not None:
         if value not in allowed_values:
             severity = field_spec.get("severity", {}).get("invalid_enum", VALIDATION_DEFAULTS["invalid_enum"])
             issue = {
@@ -123,6 +153,20 @@ def _validate_field(
                 errors.append(issue)
             else:
                 warnings.append(issue)
+
+    # Check pattern (regex the whole value must match, e.g. ZIP format)
+    pattern = field_spec.get("pattern")
+    if pattern and not re.fullmatch(pattern, str(value)):
+        errors.append({
+            "code": "E007",
+            "severity": "error",
+            "type": "invalid_format",
+            "field": field_name,
+            "row": row_num,
+            "value": str(value),
+            "message": f"Invalid format in '{field_name}' - Value '{value}' does not match the required format",
+            "action": f"Correct {field_name} for row {row_num}"
+        })
 
     # Check bounds (for numbers)
     bounds = field_spec.get("bounds", {})
@@ -164,7 +208,7 @@ def _validate_field(
         except (ValueError, TypeError):
             pass  # Not a number, skip bounds check
 
-    return errors, warnings
+    return errors, warnings, info
 
 
 def _validate_cross_field_rules(
@@ -322,15 +366,17 @@ def validate_canonical_fields(
     """
     errors = []
     warnings = []
+    info = []
 
     # Validate each field for each row
     for field_name, field_spec in schema.items():
         if field_name not in df.columns:
             continue
         for idx, value in df[field_name].items():
-            field_errors, field_warnings = _validate_field(field_name, value, field_spec, idx)
+            field_errors, field_warnings, field_info = _validate_field(field_name, value, field_spec, idx)
             errors.extend(field_errors)
             warnings.extend(field_warnings)
+            info.extend(field_info)
 
     # Cross-field validation
     cross_field_errors, cross_field_warnings = _validate_cross_field_rules(df, cross_field_rules)
@@ -343,7 +389,9 @@ def validate_canonical_fields(
         passed=passed,
         errors=errors,
         warnings=warnings,
+        info=info,
         row_count=len(df),
         error_count=len(errors),
-        warning_count=len(warnings)
+        warning_count=len(warnings),
+        info_count=len(info)
     )

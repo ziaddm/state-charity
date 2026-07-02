@@ -123,13 +123,13 @@ class TestPreValidator:
 
         result = validate_raw_structure(df_raw, mapper, "NJ")
 
-        # Should pass but have warnings for unmapped columns
+        # Should pass; unmapped columns are informational only (never block)
         assert result.passed is True
-        assert result.warning_count >= 2
+        assert result.info_count >= 2
 
         # Check for info messages about unmapped columns
-        unmapped_warnings = [w for w in result.warnings if w["code"] == "I003"]
-        assert len(unmapped_warnings) == 2
+        unmapped_info = [i for i in result.info if i["code"] == "I003"]
+        assert len(unmapped_info) == 2
 
     def test_empty_file_error(self):
         """Test error when file has no data rows"""

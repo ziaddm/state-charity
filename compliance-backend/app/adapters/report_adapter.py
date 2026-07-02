@@ -15,6 +15,7 @@ from app.mapping.mapper import load_tenant_config
 from app.models.artifacts import (
     ReportArtifact, ValidationResult, ControlTotals, compute_checksum
 )
+from app.paths import CONFIG_DIR, OUTPUT_DIR
 from app.writers.writer import write_fixed_width
 
 logger = logging.getLogger(__name__)
@@ -23,11 +24,17 @@ class ReportAdapter:
     """
     Main adapter for generating state compliance reports.
     Implements Section 3.2 Adapter Pattern from spec.
+
+    Blocking policy (fail closed): errors AND warnings block file generation
+    and ingestion. Informational notices (severity "info") are reported in the
+    validation bundle but never block.
     """
-    
-    def __init__(self, config_dir: str = "config", output_dir: str = "output"):
-        self.config_dir = Path(config_dir)
-        self.output_dir = Path(output_dir)
+
+    def __init__(self, config_dir: Optional[str] = None, output_dir: Optional[str] = None):
+        # Defaults resolve relative to the backend root (app/paths.py) so the
+        # adapter behaves the same regardless of the process working directory.
+        self.config_dir = Path(config_dir) if config_dir else CONFIG_DIR
+        self.output_dir = Path(output_dir) if output_dir else OUTPUT_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
     def generate(
@@ -153,8 +160,11 @@ class ReportAdapter:
                 state_code
             )
 
-            # FAIL CLOSED: Convert ALL pre-validation warnings to errors
+            # FAIL CLOSED: pre-validation warnings block too (promoted to the
+            # blocking list). Informational notices are carried separately and
+            # never block.
             field_validation.errors.extend(pre_validation.warnings)
+            field_validation.info.extend(pre_validation.info)
             field_validation.error_count = len(field_validation.errors)
 
             # Step 6.5: CONTROL TOTALS VALIDATION - Validate cross-record rules
@@ -171,10 +181,19 @@ class ReportAdapter:
                 state_code
             )
 
-            # FAIL CLOSED: Merge control validation into field validation (convert ALL warnings to errors)
+            # FAIL CLOSED: merge control validation — its errors and warnings
+            # both block; its informational notices do not.
             field_validation.errors.extend(control_validation.errors)
             field_validation.errors.extend(control_validation.warnings)
+            field_validation.info.extend(control_validation.info)
+
+            # Field-validation warnings block as well (single blocking list).
+            # Original severities are preserved on each item for reporting.
+            field_validation.errors.extend(field_validation.warnings)
+            field_validation.warnings = []
+            field_validation.warning_count = 0
             field_validation.error_count = len(field_validation.errors)
+            field_validation.info_count = len(field_validation.info)
             field_validation.passed = len(field_validation.errors) == 0
 
             artifact.validation = field_validation
@@ -195,6 +214,7 @@ class ReportAdapter:
                     "validation_stage": "field_validation",
                     "validation_failed": True,
                     "error_count": len(field_validation.errors),
+                    "info_count": len(field_validation.info),
                     "generation_timestamp": artifact.created_at,
                     "extract_metadata": extract_meta,
                     "mapping_summary": mapper.get_mapping_summary(),
@@ -243,6 +263,7 @@ class ReportAdapter:
                 "records_written": write_metadata['records_written'],
                 "validation_status": "passed",
                 "error_count": 0,
+                "info_count": len(field_validation.info),
                 "generation_timestamp": artifact.created_at,
                 "schema_version": "1.0.1",
                 "extract_metadata": extract_meta,

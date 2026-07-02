@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { apiFetch } from './lib/api';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
 import UploadValidation from './pages/UploadValidation';
@@ -13,6 +14,25 @@ import { Clock, LogOut } from 'lucide-react';
 const WARN_AFTER_MS  = 13 * 60 * 1000; // show warning at 13 min
 const LOGOUT_AFTER_MS = 15 * 60 * 1000; // force logout at 15 min
 const WARNING_DURATION_S = (LOGOUT_AFTER_MS - WARN_AFTER_MS) / 1000; // 120 s
+
+// Reissue the session cookie every 10 minutes while the user is signed in,
+// so an actively working user never hits the token's fixed expiry. Idle users
+// are logged out by the inactivity monitor long before the token matters.
+const SESSION_REFRESH_MS = 10 * 60 * 1000;
+
+function SessionKeepAlive() {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+    const id = setInterval(() => {
+      apiFetch('/api/auth/refresh', { method: 'POST' }).catch(() => {});
+    }, SESSION_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [user]);
+
+  return null;
+}
 
 function InactivityMonitor() {
   const { user, logout } = useAuth();
@@ -139,6 +159,7 @@ function AppShell() {
   return (
     <>
       <InactivityMonitor />
+      <SessionKeepAlive />
       <Routes>
         <Route
           path="/login"

@@ -13,6 +13,8 @@ class User(Base):
     role = Column(String)
     is_active = Column(Boolean, default=False)
     must_change_password = Column(Boolean, default=True)
+    # Tokens issued before this moment are rejected (see services/tokens.py)
+    password_changed_at = Column(DateTime)
     last_login = Column(DateTime)
     created_by_user_id = Column(String, ForeignKey("users.id"))
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

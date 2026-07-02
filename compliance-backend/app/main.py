@@ -16,8 +16,9 @@ To run the server:
 To use CLI (legacy):
     python -m app.main <tenant_id> <state_code> <source_file>
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import logging
 import sys
 import os
@@ -64,7 +65,24 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],  # lets the frontend name downloads
 )
+
+
+# CSRF protection: browsers attach an Origin header to cross-site (and most
+# same-origin) state-changing requests. Reject any mutating request whose
+# Origin is present but not one of ours. This holds even if the session
+# cookie is configured with SameSite=None for cross-domain deployments.
+@app.middleware("http")
+async def enforce_origin(request: Request, call_next):
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin")
+        if origin and origin not in allowed_origins:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Cross-origin request rejected"},
+            )
+    return await call_next(request)
 
 # ============================================================================
 # LOGGING CONFIGURATION
@@ -114,13 +132,6 @@ def health_check():
     return {"status": "healthy"}
 
 # ============================================================================
-# API ROUTES (will be imported from api/ modules)
-# ============================================================================
-# TODO: Import auth routes
-# TODO: Import validation routes
-# TODO: Import runs routes
-
-# ============================================================================
 # LEGACY CLI SUPPORT
 # ============================================================================
 
@@ -137,8 +148,8 @@ def cli_main():
     parser.add_argument("state_code", help="State code (e.g., NJ, NY)")
     parser.add_argument("source_file", help="Path to tenant's input CSV/Excel file")
     parser.add_argument("--run-id", help="Optional run identifier")
-    parser.add_argument("--config-dir", default="config", help="Configuration directory")
-    parser.add_argument("--output-dir", default="output", help="Output directory")
+    parser.add_argument("--config-dir", default=None, help="Configuration directory (default: <backend>/config)")
+    parser.add_argument("--output-dir", default=None, help="Output directory (default: <backend>/output)")
     parser.add_argument("--dry-run", action="store_true", help="Validate only, don't write output")
 
     args = parser.parse_args()
